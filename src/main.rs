@@ -63,7 +63,7 @@ impl Spacecraft {
 // debug for sc
 #[allow(dead_code)]
 fn test_sc() {
-    let sp = Spacecraft::read_file("test/test_sc.fits").unwrap();
+    let sp = Spacecraft::read_file("testfiles/test_sc.fits").unwrap();
     println!("-------test_sc------");
     println!("ndata={}", sp.len());
     println!("first term:");
@@ -113,7 +113,7 @@ impl GoodTimeInterval {
 // debug for ev
 #[allow(dead_code)]
 fn test_ev() {
-    let gti = GoodTimeInterval::read_file("test/test_ev.fits").unwrap();
+    let gti = GoodTimeInterval::read_file("testfiles/test_ev.fits").unwrap();
     println!("-------test_ev------");
     println!("ndata={}", gti.len());
     println!("first term:");
@@ -145,7 +145,7 @@ fn test_healpix() {
 
 // main
 fn main() {
-    // test_sc();
-    // test_ev();
+    test_sc();
+    test_ev();
     test_healpix();
 }
