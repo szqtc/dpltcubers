@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-getopts = "0.2.21"
+getopts = "0.2.23"
 ndarray = "0.15.6"
 fitsio = "=0.21.5"
 cdshealpix = "0.7.3"
