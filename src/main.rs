@@ -268,6 +268,17 @@ fn test_sc() {
         sp.ra_z[0], sp.dec_z[0],
         sp.ra_zth[0], sp.dec_zth[0],
         sp.lvtime[0], sp.in_saa[0]);
+
+    //assertions
+    assert_eq!(sp.len(), 86400);
+    assert_eq!(sp.tstart[0], 94608000f64);
+    assert_eq!(sp.tstop[0], 94608001f64);
+    assert_eq!((sp.ra_x[0], sp.dec_x[0]), (43.325313568115234f64,-73.42020416259766f64));
+    assert_eq!((sp.ra_y[0], sp.dec_y[0]), (107.74408721923828f64,7.325563430786133f64));
+    assert_eq!((sp.ra_z[0], sp.dec_z[0]), (15.798971176147461f64,14.79005241394043f64));
+    assert_eq!((sp.ra_zth[0], sp.dec_zth[0]), (195.79896545410156f64,-14.79005241394043f64));
+    assert_eq!(sp.lvtime[0], 0.8525199890136719f64);
+    assert!(!sp.in_saa[0]);
 }
 
 #[test]
@@ -277,6 +288,12 @@ fn test_ev() {
     println!("ndata={}", gti.len());
     println!("first term:");
     println!("  start={}, stop={}, fd={}", gti.tgstart[0], gti.tgstop[0], gti.fds[0]);
+
+    //assertions
+    assert_eq!(gti.len(), 62);
+    assert_eq!(gti.tgstart[0], 94608354f64);
+    assert_eq!(gti.tgstop[0], 94610134f64);
+    assert_eq!(gti.fds[0], 64i32);
 }
 
 #[test]
@@ -293,11 +310,19 @@ fn test_healpix() {
 
     println!("order={}, nside={}, npix={}, ipix={}", order, nside, npix, ipix);
     println!("coord({},{}) -> ipix({}) -> coord({},{})", lon*R2D, lat*R2D, ipix, lonr*R2D, latr*R2D);
+    // assertions
+    assert_eq!(nside, 64);
+    assert_eq!(npix, 49152);
+    assert_eq!(ipix, 19725);
+    assert_eq!((lonr*R2D, latr*R2D), (11.953125, 13.24801490567695));
 
     let nestobj = cdshealpix::nested::get(order);
     let ipix2 = nestobj.hash(lon, lat);
     let (lonr2, latr2) = nestobj.center(ipix);
     println!("=> ipix({}) -> coord({},{})", ipix2, lonr2*R2D, latr2*R2D);
+    // assertions
+    assert_eq!(ipix2, 19725);
+    assert_eq!((lonr2*R2D, latr2*R2D), (11.953125, 13.24801490567695));
 
     // test hpxcrd obj
     let start = std::time::Instant::now();
@@ -312,6 +337,9 @@ fn test_healpix() {
     for ipix in npix-10..npix {
         println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, hpxcrd.sindecs[ipix], hpxcrd.cosdecs[ipix], hpxcrd.ras_r[ipix]);
     }
+    // assertions
+    assert_eq!((hpxcrd.sindecs[0], hpxcrd.cosdecs[0], hpxcrd.ras_r[0]), (0.005208333333333333, 0.9999864365399607, 0.7853981633974483));
+    assert_eq!((hpxcrd.sindecs[196607], hpxcrd.cosdecs[196607], hpxcrd.ras_r[196607]), (-0.005208333333333333, 0.9999864365399607, 5.497787143782138));
 }
 
 
