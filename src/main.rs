@@ -113,6 +113,7 @@ struct HealpixCoordinates {
     sindecs: Vec<f64>,
     cosdecs: Vec<f64>,
     ras_r: Vec<f64>,
+    decs_r: Vec<f64>,
 }
 
 impl HealpixCoordinates {
@@ -126,11 +127,13 @@ impl HealpixCoordinates {
         let mut sindecs: Vec<f64> = Vec::with_capacity(npix.try_into()?);
         let mut cosdecs: Vec<f64> = Vec::with_capacity(npix.try_into()?);
         let mut ras_r: Vec<f64> = Vec::with_capacity(npix.try_into()?);
+        let mut decs_r: Vec<f64> = Vec::with_capacity(npix.try_into()?);
 
         let nestobj = cdshealpix::nested::get(order);
         for ipix in 0..npix {
             let (ra_r, dec_r) = nestobj.center(ipix);
             ras_r.push(ra_r);
+            decs_r.push(dec_r);
             sindecs.push(dec_r.sin());
             cosdecs.push(dec_r.cos());
         }
@@ -142,6 +145,7 @@ impl HealpixCoordinates {
             sindecs: sindecs,
             cosdecs: cosdecs,
             ras_r: ras_r,
+            decs_r: decs_r,
         };
 
         Ok(myobj)
