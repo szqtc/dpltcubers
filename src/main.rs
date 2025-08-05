@@ -4,6 +4,7 @@ use std::f64::consts;
 use std::str::FromStr;
 // use ndarray::Array3;
 use fitsio::FitsFile;
+use fitsio::tables::{ColumnDescription, ColumnDataType};
 use cdshealpix::nested;
 
 const R2D: f64 = 180./consts::PI;
@@ -39,7 +40,7 @@ impl Spacecraft {
     pub fn read_file(scfile: &str) -> Result<Self, fitsio::errors::Error> {
         let mut fptr = match FitsFile::open(scfile) {
             Ok(ptr) => ptr,
-            Err(_) => panic!("scfile not found: {}", scfile),
+            Err(_) => panic!("scfile not found: {} (path={})", scfile, std::env::current_dir().unwrap().display()),
         };
         // fptr.pretty_print()?; // show fitsinfo
         let hdu = fptr.hdu("SC_DATA")?;
@@ -84,7 +85,7 @@ impl GoodTimeInterval {
     pub fn read_file(evfile: &str) -> Result<Self, fitsio::errors::Error> {
         let mut fptr = match FitsFile::open(evfile) {
             Ok(ptr) => ptr,
-            Err(_) => panic!("evfile not found: {}", evfile),
+            Err(_) => panic!("evfile not found: {} (path={})", evfile, std::env::current_dir().unwrap().display()),
         };
         // fptr.pretty_print()?; // show fitsinfo
         let hdu = fptr.hdu("GTI")?;
@@ -157,10 +158,29 @@ fn ltcube_worker() {
 
 fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     order: u32, thetabins: u32, phibins: u32, zmax: f64, nthreads: u32, lincth: bool)
+    -> Result<(), Box<dyn std::error::Error>>
 {
     // debug
     println!("-s {} -e {} -o {}", scfile, evfile, outfile);
     println!("--lincth {} --order {} --thetabins {} --phibins {} --zmax {} --nthreads {}", lincth, order, thetabins, phibins, zmax, nthreads);
+
+    return Ok(());
+
+//     /////////////////////
+//     // save file
+//     let fptr = FitsFile::create(outfile).open()?;
+//     let hdu0 = fptr.hdu(0)?;
+
+
+//     // Healpix map
+//     let first_description = ColumnDescription::new("A")
+//         .with_type(ColumnDataType::Int)
+//         .create()?;
+//     let second_description = ColumnDescription::new("B")
+//         .with_type(ColumnDataType::Long)
+//         .create()?;
+//     let descriptions = [first_description, second_description];
+//     let hdu = fptr.create_table("EXTNAME".to_string(), &descriptions)?;
 }
 
 
@@ -229,13 +249,13 @@ fn parse_run() {
     };
 
     // run
-    ltcube_main(&scfile, &evfile, &outfile, order, ntheta, nphi, zmax, nthr, lincth);
+    ltcube_main(&scfile, &evfile, &outfile, order, ntheta, nphi, zmax, nthr, lincth).unwrap();
 }
 
 ////////////////////////
 // tests
 ////////////////////////
-#[allow(dead_code)]
+#[test]
 fn test_sc() {
     let sp = Spacecraft::read_file("testfiles/test_sc.fits").unwrap();
     println!("-------test_sc------");
@@ -250,7 +270,7 @@ fn test_sc() {
         sp.lvtime[0], sp.in_saa[0]);
 }
 
-#[allow(dead_code)]
+#[test]
 fn test_ev() {
     let gti = GoodTimeInterval::read_file("testfiles/test_ev.fits").unwrap();
     println!("-------test_ev------");
@@ -259,7 +279,7 @@ fn test_ev() {
     println!("  start={}, stop={}, fd={}", gti.tgstart[0], gti.tgstop[0], gti.fds[0]);
 }
 
-#[allow(dead_code)]
+#[test]
 fn test_healpix() {
     println!("-------test_healpix------");
     let order = 6_u8;
@@ -294,17 +314,11 @@ fn test_healpix() {
     }
 }
 
-#[allow(dead_code)]
-fn test_all() {
-    // test_sc();
-    // test_ev();
-    test_healpix();
-}
-
 
 ////////////////////////
 fn main() {
-    test_all();
-    // parse_run();
-
+    parse_run();
+    // test_sc();
+    // test_ev();
+    // test_healpix();
 }
