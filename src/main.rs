@@ -6,6 +6,7 @@ use std::str::FromStr;
 use fitsio::FitsFile;
 use fitsio::tables::{ColumnDescription, ColumnDataType};
 use cdshealpix::nested;
+use chrono::prelude::*;
 
 const R2D: f64 = 180./consts::PI;
 const D2R: f64 = consts::PI/180.;
@@ -160,17 +161,31 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     order: u32, thetabins: u32, phibins: u32, zmax: f64, nthreads: u32, lincth: bool)
     -> Result<(), Box<dyn std::error::Error>>
 {
-    // debug
+    // echo
     println!("-s {} -e {} -o {}", scfile, evfile, outfile);
     println!("--lincth {} --order {} --thetabins {} --phibins {} --zmax {} --nthreads {}", lincth, order, thetabins, phibins, zmax, nthreads);
+    // return Ok(());
 
+    // main
+
+
+    // save file
+    match std::fs::metadata(outfile) {
+        Ok(_) => {println!("remove the existing output file: {}", outfile);
+                  std::fs::remove_file(outfile)},
+        _ => Ok(()),
+    }?;
+    let mut fptr = FitsFile::create(outfile).open()?;
+
+    let hdu0 = fptr.primary_hdu()?;
+    hdu0.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
+    hdu0.write_key(&mut fptr, "PHFILE", evfile)?;
+    hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
+    hdu0.write_key(&mut fptr, "HISTORY", format!("DPLTRS ver {}", env!("CARGO_PKG_VERSION")))?;
+    hdu0.write_key(&mut fptr, "HISTORY", format!("by {} at {}", whoami::username(),
+            Local::now().round_subsecs(0).to_rfc3339())
+        )?;
     return Ok(());
-
-//     /////////////////////
-//     // save file
-//     let fptr = FitsFile::create(outfile).open()?;
-//     let hdu0 = fptr.hdu(0)?;
-
 
 //     // Healpix map
 //     let first_description = ColumnDescription::new("A")
@@ -345,8 +360,7 @@ fn test_healpix() {
 
 ////////////////////////
 fn main() {
-    parse_run();
-    // test_sc();
-    // test_ev();
-    // test_healpix();
+    // parse_run();
+
+    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 6, 20, 1, 100., 1, true).unwrap();
 }
