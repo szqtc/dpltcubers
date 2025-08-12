@@ -34,6 +34,7 @@ pub struct Spacecraft {
 
 impl Spacecraft {
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.tstart.len()
     }
@@ -79,6 +80,7 @@ struct GoodTimeIntervals {
 
 impl GoodTimeIntervals {
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.tgstart.len()
     }
@@ -118,6 +120,7 @@ struct HealpixCoordinates {
 
 impl HealpixCoordinates {
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.npix.try_into().unwrap()
     }
@@ -151,20 +154,14 @@ impl HealpixCoordinates {
         Ok(myobj)
     }
 
+    #[inline]
     pub fn get_ras_deg(&self) -> Vec<f64> {
-        let mut ras_d: Vec<f64> = Vec::with_capacity(self.ras_r.len());
-        for ra_r in &self.ras_r {
-            ras_d.push(ra_r*R2D);
-        }
-        ras_d
+        self.ras_r.iter().map(|v| v*R2D).collect()
     }
 
+    #[inline]
     pub fn get_decs_deg(&self) -> Vec<f64> {
-        let mut decs_d: Vec<f64> = Vec::with_capacity(self.decs_r.len());
-        for dec_r in &self.decs_r {
-            decs_d.push(dec_r*R2D);
-        }
-        decs_d
+        self.decs_r.iter().map(|v| v*R2D).collect()
     }
 }
 
@@ -482,5 +479,5 @@ fn test_healpix() {
 fn main() {
     // parse_run();
 
-    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 6, 20, 2, 100., 1, false).unwrap();
+    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 100., 1, false).unwrap();
 }
