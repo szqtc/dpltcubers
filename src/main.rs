@@ -2,10 +2,10 @@
 
 use std::f64::consts;
 use std::str::FromStr;
-// use ndarray::Array3;
+use std::io::{Error, ErrorKind};
 use fitsio::FitsFile;
 use fitsio::tables::{ColumnDescription, ColumnDataType};
-use chrono::prelude::*;
+use hifitime::prelude::*;
 use ndarray::prelude::*;
 
 const R2D: f64 = 180./consts::PI;
@@ -172,9 +172,9 @@ impl HealpixCoordinates {
 ////////////////////////
 // dpltcube main
 ////////////////////////
-fn get_time_str() -> String {
-    let dt = Local::now();
-    dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+fn get_time_str(fmt: &Format) -> String {
+    let dt = Epoch::now().unwrap();
+    Formatter::new(dt, *fmt).to_string()
 }
 
 
@@ -188,16 +188,32 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     -> Result<(), Box<dyn std::error::Error>>
 {
     // echo the input params
-    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmax={} nthreads={}", get_time_str(), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmax, nthreads);
+    let tfmt = Format::from_str("%Y-%m-%dT%H:%M:%S").unwrap();
+    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmax={} nthreads={}", get_time_str(&tfmt), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmax, nthreads);
 
     // read files
-    println!("[{}] loading sc file ...", get_time_str());
-    let spobj = Spacecraft::read_file(scfile)?;
-    println!("[{}] loading ev file ...", get_time_str());
+    println!("[{}] loading sc file ...", get_time_str(&tfmt));
+    let scobj = Spacecraft::read_file(scfile)?;
+    let nsc = scobj.len();
+    if nsc == 0 {
+        return Err(Box::new(Error::new(ErrorKind::InvalidData, "empty scfile")));
+    }
+
+    println!("[{}] loading ev file ...", get_time_str(&tfmt));
     let gtiobj = GoodTimeIntervals::read_file(evfile)?;
+    let ngti = gtiobj.len();
+    if ngti == 0 {
+        return Err(Box::new(Error::new(ErrorKind::InvalidData, "empty gti list")));
+    }
+
+    let (gtimin, gtimax) = (gtiobj.tgstart[0], gtiobj.tgstop[ngti-1]);
+    if gtimin<scobj.tstart[0] || gtimax>scobj.tstop[nsc-1] {
+        let errstr = format!("SC file ({}--{}) must cover the entire GTI ({}--{})", scobj.tstart[0], scobj.tstop[nsc-1], gtimin, gtimax);
+        return Err(Box::new(Error::new(ErrorKind::InvalidData, errstr)));
+    }
 
     // create data
-    println!("[{}] preparing miscellaneous information ...", get_time_str());
+    println!("[{}] preparing miscellaneous information ...", get_time_str(&tfmt));
     let hpxobj = HealpixCoordinates::init_with_order(order.try_into()?)?;
     let npix = hpxobj.len();
     let ras_deg = hpxobj.get_ras_deg();
@@ -220,41 +236,50 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut lttint = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
     let mut lttint8= Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
 
-    /*
-    // compare with DAMPE_ltcube_20240901_phi_nside128_wint.fits[HL]
-    ltfd08[[0,0,0]]=50882.426;
-    ltfd08[[0,0,1]]=48357.695;
-    ltfd08[[1,0,1]]=48392.543;
-    ltfd08[[1,1,1]]=48473.54;
-    */
-
-    // run the workers
-    println!("[{}] calculating ltcube ...", get_time_str());
+    // find the min/max index
+    println!("[{}] calculating ltcube ...", get_time_str(&tfmt));
     let stopwatch = std::time::Instant::now();
 
+    let mut idxlo = bisection::bisect_right_by(&scobj.tstart,
+        |v| gtimin.partial_cmp(v).unwrap())-1;
+    let mut idxhi = bisection::bisect_right_by(&scobj.tstop,
+        |v| gtimax.partial_cmp(v).unwrap())+1;
+    idxlo = std::cmp::max(idxlo, 0);
+    idxhi = std::cmp::min(idxhi, nsc-1);
+    assert!(idxlo<=idxhi);
+    // debug
+    println!("idxlo={}, idxhi={}", idxlo, idxhi);
+    println!("gtitmin={}, gtitmax={}", gtimin, gtimax);
+    println!("sctmin={}, sctmax={}", scobj.tstart[idxlo], scobj.tstop[idxhi]);
+
+    ///
+    // run the workers
+    ///
 
     let dtime = stopwatch.elapsed();
-    println!("[{}] DT = {:?} x {}", get_time_str(), dtime, nthreads);
+    println!("[{}]  DT = {:?} x {}", get_time_str(&tfmt), dtime, nthreads);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
-        Ok(_) => {println!("[{}] remove the existing output file: {}", get_time_str(), outfile);
-                  std::fs::remove_file(outfile)},
+        Ok(_) => {
+            println!("[{}] remove the existing output file: {}", get_time_str(&tfmt), outfile);
+            std::fs::remove_file(outfile)
+        },
         _ => Ok(()),
     }?;
     let mut fptr = FitsFile::create(outfile).open()?;
 
     // ext0
-    println!("[{}] preparing save data ...", get_time_str());
+    println!("[{}] preparing save data ...", get_time_str(&tfmt));
     let who = whoami::username();
     let hdu0 = fptr.primary_hdu()?;
 
     hdu0.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu0.write_key(&mut fptr, "PHFILE", evfile)?;
     hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
-    hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
+    hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
     hdu0.write_key(&mut fptr, "HISTORY", format!("dpltrs ver {}", env!("CARGO_PKG_VERSION")))?;
-    hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {:?} x {}", dtime, nthreads))?;
+    hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {} [sec] x {}", dtime.as_secs_f32(), nthreads))?;
 
     // ext1
     let nvec: usize = (thetabins*phibins).try_into()?;
@@ -286,15 +311,16 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "INDXSCHM", "IMPLICIT")?;
     hdu1.write_key(&mut fptr, "TIMESYS", "TT")?;
     hdu1.write_key(&mut fptr, "TIMEUNIT", "s")?;
-    hdu1.write_key(&mut fptr, "TLTRFMET", (MET_REF, "TLT ref. time in MET"))?;
     hdu1.write_key(&mut fptr, "LIVETIME", (lttot, "sec"))?;
-    /*
-    t0 = utcref + atime.TimeDelta(gtistart[0], scale='tt', format='sec')
-    hdu1.header['TSTART'] = (gtistart[0], t0.isot)
-    t1 = utcref + atime.TimeDelta(gtistart[-1], scale='tt', format='sec')
-    hdu1.header['TSTOP'] = (gtistop[-1], t1.isot)
-     */
-    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
+
+    let utcref = Epoch::from_gregorian_utc(2013, 1, 1, 0, 0, 0, 0);
+    let metrefutc = utcref + hifitime::Duration::from_seconds(MET_REF);
+    let gtitminutc = utcref + hifitime::Duration::from_seconds(gtimin);
+    let gtitmaxutc = utcref + hifitime::Duration::from_seconds(gtimax);
+    hdu1.write_key(&mut fptr, "TLTRFMET", (MET_REF, Formatter::new(metrefutc, tfmt).to_string()))?;
+    hdu1.write_key(&mut fptr, "TSTART", (gtimin, Formatter::new(gtitminutc, tfmt).to_string()))?;
+    hdu1.write_key(&mut fptr, "TSTOP", (gtimax, Formatter::new(gtitmaxutc, tfmt).to_string()))?;
+    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
 
     // ext2
     let col21 = ColumnDescription::new("CTHETA_MIN").with_type(ColumnDataType::Float).create()?;
@@ -309,7 +335,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {"LIN"} else {"SQ"})?;
     hdu2.write_key(&mut fptr, "CTHMIN", CTHETA_MIN)?;
     hdu2.write_key(&mut fptr, "NCTHBIN", thetabins)?;
-    hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
+    hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
 
     // ext3
     let col31 = ColumnDescription::new("PHI_MIN").with_type(ColumnDataType::Float).create()?;
@@ -324,9 +350,9 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu3.write_key(&mut fptr, "SCAXIS", "-X-Y-Z")?;
     hdu3.write_key(&mut fptr, "NPHIBIN", phibins)?;
     hdu3.write_key(&mut fptr, "PHIBINAL", "LIN")?;
-    hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
+    hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
 
-    println!("[{}] done", get_time_str());
+    println!("[{}] done", get_time_str(&tfmt));
     Ok(())
 }
 
