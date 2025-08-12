@@ -174,9 +174,11 @@ fn get_time_str() -> String {
     dt.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
+
 fn ltcube_worker() {
     
 }
+
 
 fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     order: u32, thetabins: u32, phibins: u32, zmax: f64, nthreads: u32, lincth: bool)
@@ -212,6 +214,9 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut lttot = 0.;
     let mut ltfd08 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
     let mut ltfd64 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
+    let mut lttint = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
+    let mut lttint8= Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
+
     /*
     // compare with DAMPE_ltcube_20240901_phi_nside128_wint.fits[HL]
     ltfd08[[0,0,0]]=50882.426;
@@ -228,7 +233,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let dtime = stopwatch.elapsed();
     println!("[{}] DT = {:?} x {}", get_time_str(), dtime, nthreads);
 
-    // save file
+    // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
         Ok(_) => {println!("[{}] remove the existing output file: {}", get_time_str(), outfile);
                   std::fs::remove_file(outfile)},
@@ -238,11 +243,12 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 
     // ext0
     println!("[{}] preparing save data ...", get_time_str());
+    let who = whoami::username();
     let hdu0 = fptr.primary_hdu()?;
+
     hdu0.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu0.write_key(&mut fptr, "PHFILE", evfile)?;
     hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
-    let who = whoami::username();
     hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
     hdu0.write_key(&mut fptr, "HISTORY", format!("dpltrs ver {}", env!("CARGO_PKG_VERSION")))?;
     hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {:?} x {}", dtime, nthreads))?;
@@ -251,15 +257,17 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let nvec: usize = (thetabins*phibins).try_into()?;
     let col1 = ColumnDescription::new("LL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
     let col2 = ColumnDescription::new("HL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
-    // let col3 = ColumnDescription::new("TINT").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
-    // let col4 = ColumnDescription::new("TINTLL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
+    let col3 = ColumnDescription::new("TINT").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
+    let col4 = ColumnDescription::new("TINTLL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
     let col5 = ColumnDescription::new("RA").with_type(ColumnDataType::Float).create()?;
     let col6 = ColumnDescription::new("DEC").with_type(ColumnDataType::Float).create()?;
-
-    let des1 = [col1, col2, col5, col6];
+    let des1 = [col1, col2, col3, col4, col5, col6];
     let hdu1 = fptr.create_table("EXPOSURE".to_string(), &des1)?;
+
     hdu1.write_col(&mut fptr, "LL", &ltfd08.flatten().to_vec())?;
     hdu1.write_col(&mut fptr, "HL", &ltfd64.flatten().to_vec())?;
+    hdu1.write_col(&mut fptr, "TINT", &lttint.flatten().to_vec())?;
+    hdu1.write_col(&mut fptr, "TINTLL", &lttint8.flatten().to_vec())?;
     hdu1.write_col(&mut fptr, "RA", &ras_deg)?;
     hdu1.write_col(&mut fptr, "DEC", &decs_deg)?;
 
@@ -267,32 +275,33 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "ZMAX", (zmax, "deg"))?;
     hdu1.write_key(&mut fptr, "ORDERING", "NESTED")?;
     hdu1.write_key(&mut fptr, "PIXTYPE", "HEALPIX")?;
-    hdu1.write_key(&mut fptr, "NSIDE", 2i32.pow(order))?;
+    hdu1.write_key(&mut fptr, "NSIDE", hpxobj.nside)?;
     hdu1.write_key(&mut fptr, "COORDSYS", "CEL")?;
     hdu1.write_key(&mut fptr, "RADECSYS", ("FK5", "J2000"))?;
     hdu1.write_key(&mut fptr, "FIRSTPIX", 0)?;
-    hdu1.write_key(&mut fptr, "LASTPIX", (npix as i32)-1)?;
+    hdu1.write_key(&mut fptr, "LASTPIX", hpxobj.npix-1)?;
     hdu1.write_key(&mut fptr, "INDXSCHM", "IMPLICIT")?;
     hdu1.write_key(&mut fptr, "TIMESYS", "TT")?;
     hdu1.write_key(&mut fptr, "TIMEUNIT", "s")?;
     hdu1.write_key(&mut fptr, "TLTRFMET", (MET_REF, "TLT ref. time in MET"))?;
     hdu1.write_key(&mut fptr, "LIVETIME", (lttot, "sec"))?;
-
-    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
     /*
     t0 = utcref + atime.TimeDelta(gtistart[0], scale='tt', format='sec')
     hdu1.header['TSTART'] = (gtistart[0], t0.isot)
     t1 = utcref + atime.TimeDelta(gtistart[-1], scale='tt', format='sec')
     hdu1.header['TSTOP'] = (gtistop[-1], t1.isot)
      */
+    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str()))?;
 
     // ext2
     let col21 = ColumnDescription::new("CTHETA_MIN").with_type(ColumnDataType::Float).create()?;
     let col22 = ColumnDescription::new("CTHETA_MAX").with_type(ColumnDataType::Float).create()?;
     let des2 = [col21, col22];
     let hdu2 = fptr.create_table("CTHETABOUNDS".to_string(), &des2)?;
+
     hdu2.write_col(&mut fptr, "CTHETA_MIN", &cthetabounds[0..thetabins_usize])?;
     hdu2.write_col(&mut fptr, "CTHETA_MAX", &cthetabounds[1..thetabins_usize+1])?;
+
     hdu2.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {"LIN"} else {"SQ"})?;
     hdu2.write_key(&mut fptr, "CTHMIN", CTHETA_MIN)?;
@@ -304,8 +313,10 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let col32 = ColumnDescription::new("PHI_MAX").with_type(ColumnDataType::Float).create()?;
     let des3 = [col31, col32];
     let hdu3 = fptr.create_table("PHIBOUNDS".to_string(), &des3)?;
+
     hdu3.write_col(&mut fptr, "PHI_MIN", &phibounds[0..phibins_usize])?;
     hdu3.write_col(&mut fptr, "PHI_MAX", &phibounds[1..phibins_usize+1])?;
+
     hdu3.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu3.write_key(&mut fptr, "SCAXIS", "-X-Y-Z")?;
     hdu3.write_key(&mut fptr, "NPHIBIN", phibins)?;
@@ -383,6 +394,7 @@ fn parse_run() {
     // run
     ltcube_main(&scfile, &evfile, &outfile, order, ntheta, nphi, zmax, nthr, lincth).unwrap();
 }
+
 
 ////////////////////////
 // tests
