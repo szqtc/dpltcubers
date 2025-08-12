@@ -16,7 +16,7 @@ const MET_REF: f64 = 94608001.0; // 2016-01-01 in seconds
 ////////////////////////
 // sc loader
 ////////////////////////
-#[derive(Default)]
+// #[derive(Default)]
 pub struct Spacecraft {
     tstart:  Vec<f64>,
     tstop:   Vec<f64>,
@@ -71,7 +71,7 @@ impl Spacecraft {
 ////////////////////////
 // gti loader
 ////////////////////////
-#[derive(Default)]
+// #[derive(Default)]
 struct GoodTimeIntervals {
     tgstart: Vec<f64>,
     tgstop : Vec<f64>,
@@ -107,13 +107,11 @@ impl GoodTimeIntervals {
 ////////////////////////
 // Healpix coordinates
 ////////////////////////
-#[derive(Default)]
+// #[derive(Default)]
 struct HealpixCoordinates {
     order: u8,
     nside: u32,
     npix: u64,
-    sindecs: Vec<f64>,
-    cosdecs: Vec<f64>,
     ras_r: Vec<f64>,
     decs_r: Vec<f64>,
 }
@@ -127,8 +125,6 @@ impl HealpixCoordinates {
 
     pub fn init_with_order(order: u8) -> Result<Self, Box<dyn std::error::Error>> {
         let npix: u64 = 12*(2_u64.pow((order*2).into()));
-        let mut sindecs: Vec<f64> = Vec::with_capacity(npix.try_into()?);
-        let mut cosdecs: Vec<f64> = Vec::with_capacity(npix.try_into()?);
         let mut ras_r: Vec<f64> = Vec::with_capacity(npix.try_into()?);
         let mut decs_r: Vec<f64> = Vec::with_capacity(npix.try_into()?);
 
@@ -137,16 +133,12 @@ impl HealpixCoordinates {
             let (ra_r, dec_r) = nestobj.center(ipix);
             ras_r.push(ra_r);
             decs_r.push(dec_r);
-            sindecs.push(dec_r.sin());
-            cosdecs.push(dec_r.cos());
         }
 
         let myobj = Self {
             order: order,
             nside: 2_u32.pow(order.into()),
             npix: npix,
-            sindecs: sindecs,
-            cosdecs: cosdecs,
             ras_r: ras_r,
             decs_r: decs_r,
         };
@@ -163,6 +155,17 @@ impl HealpixCoordinates {
     pub fn get_decs_deg(&self) -> Vec<f64> {
         self.decs_r.iter().map(|v| v*R2D).collect()
     }
+
+    #[inline]
+    pub fn get_sindecs(&self) -> Vec<f64> {
+        self.decs_r.iter().map(|v| v.sin()).collect()
+    }
+
+    #[inline]
+    pub fn get_cosdecs(&self) -> Vec<f64> {
+        self.decs_r.iter().map(|v| v.cos()).collect()
+    }
+
 }
 
 
@@ -400,9 +403,10 @@ fn parse_run() {
 // tests
 ////////////////////////
 #[test]
-fn test_sc() {
-    let sp = Spacecraft::read_file("testfiles/test_sc.fits").unwrap();
+fn test_readfiles() {
+    ///////// scfile
     println!("-------test_sc------");
+    let sp = Spacecraft::read_file("testfiles/test_sc.fits").unwrap();
     println!("ndata={}", sp.len());
     println!("first term:");
     println!("  tstart={}, tstop={}, posx=({},{}), posy=({},{}), posz=({},{}), poszth=({},{}), lvt={}, insaa={}",
@@ -423,12 +427,10 @@ fn test_sc() {
     assert_eq!((sp.ra_zth[0], sp.dec_zth[0]), (195.79896545410156f64,-14.79005241394043f64));
     assert_eq!(sp.lvtime[0], 0.8525199890136719f64);
     assert!(!sp.in_saa[0]);
-}
 
-#[test]
-fn test_ev() {
-    let gti = GoodTimeIntervals::read_file("testfiles/test_ev.fits").unwrap();
+    ///////// evfile
     println!("-------test_ev------");
+    let gti = GoodTimeIntervals::read_file("testfiles/test_ev.fits").unwrap();
     println!("ndata={}", gti.len());
     println!("first term:");
     println!("  start={}, stop={}, fd={}", gti.tgstart[0], gti.tgstop[0], gti.fds[0]);
@@ -447,24 +449,26 @@ fn test_healpix() {
     let lon = 12.5_f64*D2R;
     let lat = 13.2_f64*D2R;
 
+    // simple run
     let nside = cdshealpix::nside(order);
     let npix = 12*nside.pow(2);
-    let ipix = nested::hash(order, lon, lat);
-    let (lonr, latr) = nested::center(order, ipix);
+    let ipix = cdshealpix::nested::hash(order, lon, lat);
+    let (lonr, latr) = cdshealpix::nested::center(order, ipix);
 
     println!("order={}, nside={}, npix={}, ipix={}", order, nside, npix, ipix);
     println!("coord({},{}) -> ipix({}) -> coord({},{})", lon*R2D, lat*R2D, ipix, lonr*R2D, latr*R2D);
-    // assertions
+
     assert_eq!(nside, 64);
     assert_eq!(npix, 49152);
     assert_eq!(ipix, 19725);
     assert_eq!((lonr*R2D, latr*R2D), (11.953125, 13.24801490567695));
 
+    // nest obj
     let nestobj = cdshealpix::nested::get(order);
     let ipix2 = nestobj.hash(lon, lat);
     let (lonr2, latr2) = nestobj.center(ipix);
     println!("=> ipix({}) -> coord({},{})", ipix2, lonr2*R2D, latr2*R2D);
-    // assertions
+
     assert_eq!(ipix2, 19725);
     assert_eq!((lonr2*R2D, latr2*R2D), (11.953125, 13.24801490567695));
 
@@ -474,16 +478,19 @@ fn test_healpix() {
     let dt = start.elapsed();
     println!("init time = {:?}", dt);
 
+    let sindecs = hpxcrd.get_sindecs();
+    let cosdecs = hpxcrd.get_cosdecs();
     for ipix in 0..10 {
-        println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, hpxcrd.sindecs[ipix], hpxcrd.cosdecs[ipix], hpxcrd.ras_r[ipix]);
+        println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, sindecs[ipix], cosdecs[ipix], hpxcrd.ras_r[ipix]);
     }
     let npix = hpxcrd.len();
     for ipix in npix-10..npix {
-        println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, hpxcrd.sindecs[ipix], hpxcrd.cosdecs[ipix], hpxcrd.ras_r[ipix]);
+        println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, sindecs[ipix], cosdecs[ipix], hpxcrd.ras_r[ipix]);
     }
+
     // assertions
-    assert_eq!((hpxcrd.sindecs[0], hpxcrd.cosdecs[0], hpxcrd.ras_r[0]), (0.005208333333333333, 0.9999864365399607, 0.7853981633974483));
-    assert_eq!((hpxcrd.sindecs[196607], hpxcrd.cosdecs[196607], hpxcrd.ras_r[196607]), (-0.005208333333333333, 0.9999864365399607, 5.497787143782138));
+    assert_eq!((sindecs[0], cosdecs[0], hpxcrd.ras_r[0]), (0.005208333333333333, 0.9999864365399607, 0.7853981633974483));
+    assert_eq!((sindecs[196607], cosdecs[196607], hpxcrd.ras_r[196607]), (-0.005208333333333333, 0.9999864365399607, 5.497787143782138));
 }
 
 
