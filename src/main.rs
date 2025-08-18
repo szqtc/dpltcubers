@@ -186,7 +186,7 @@ fn ltcube_worker() {
 }
 
 
-fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
+pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     order: u32, thetabins: u32, phibins: u32, zmax: f64, nthreads: u32, lincth: bool)
     -> Result<(), Box<dyn std::error::Error>>
 {
@@ -432,6 +432,10 @@ fn parse_run() {
 ////////////////////////
 // tests
 ////////////////////////
+#[cfg(test)]
+mod tests {
+use super::*;
+
 #[test]
 fn test_readfiles() {
     ///////// scfile
@@ -669,6 +673,8 @@ fn test_bisect() {
     // assert!(false);
 }
 
+
+}
 
 ////////////////////////
 fn main() {
