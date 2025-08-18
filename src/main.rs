@@ -8,10 +8,13 @@ use fitsio::tables::{ColumnDescription, ColumnDataType};
 use hifitime::prelude::*;
 use ndarray::prelude::*;
 
+mod bisect;
+
 const R2D: f64 = 180./consts::PI;
 const D2R: f64 = consts::PI/180.;
 const CTHETA_MIN: f64 = 0.5;
-const MET_REF: f64 = 94608001.0; // 2016-01-01 in seconds from 2013-01-01
+const TLTRF_MET_REF: f64 = 94608001.0; // 2016-01-01 in seconds from 2013-01-01
+
 
 ////////////////////////
 // sc loader
@@ -205,7 +208,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
         return Err(Box::new(Error::new(ErrorKind::InvalidData, "empty gti list")));
     }
 
-    let (gtimin, gtimax) = (gtiobj.tgstart[0], gtiobj.tgstop[ngti-1]);
+    let (gtimin, gtimax): (f64, f64) = (gtiobj.tgstart[0], gtiobj.tgstop[ngti-1]);
     if gtimin<scobj.tstart[0] || gtimax>scobj.tstop[nsc-1] {
         let errstr = format!("SC file ({}--{}) must cover the entire GTI ({}--{})", scobj.tstart[0], scobj.tstop[nsc-1], gtimin, gtimax);
         return Err(Box::new(Error::new(ErrorKind::InvalidData, errstr)));
@@ -237,17 +240,20 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     println!("[{}] calculating ltcube ...", get_time_str());
     let stopwatch = std::time::Instant::now();
 
-    let mut idxlo = bisection::bisect_right_by(&scobj.tstart,
-        |v| gtimin.partial_cmp(v).unwrap())-1;
-    let mut idxhi = bisection::bisect_right_by(&scobj.tstop,
-        |v| gtimax.partial_cmp(v).unwrap())+1;
+    let mut idxlo = bisect::bisect_right(&scobj.tstart, &gtimin)-1;
+    let mut idxhi = bisect::bisect_left(&scobj.tstart, &gtimax)+1;
     idxlo = std::cmp::max(idxlo, 0);
     idxhi = std::cmp::min(idxhi, nsc-1);
     assert!(idxlo<=idxhi);
+
+    let comp_f = |a:&f64, b:&f64| {a.partial_cmp(b).unwrap()};
+    let tmin = std::cmp::max_by(gtimin, scobj.tstart[idxlo], comp_f);
+    let tmax = std::cmp::min_by(gtimax, scobj.tstop[idxhi], comp_f);
     // debug
     println!("idxlo={}, idxhi={}", idxlo, idxhi);
     println!("gtitmin={}, gtitmax={}", gtimin, gtimax);
     println!("sctmin={}, sctmax={}", scobj.tstart[idxlo], scobj.tstop[idxhi]);
+    println!("tmin={}, tmax={}", tmin, tmax);
 
     ///
     // run the workers
@@ -267,11 +273,11 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut fptr = FitsFile::create(outfile).open()?;
 
     // ext0
-    println!("[{}] preparing save data ...", get_time_str());
-    let timestr = get_time_str();
     let who = whoami::username();
-    let hdu0 = fptr.primary_hdu()?;
+    let timestr = get_time_str();
+    println!("[{}] preparing save data ...", timestr);
 
+    let hdu0 = fptr.primary_hdu()?;
     hdu0.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu0.write_key(&mut fptr, "PHFILE", evfile)?;
     hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
@@ -311,13 +317,13 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "TIMEUNIT", "s")?;
     hdu1.write_key(&mut fptr, "LIVETIME", (lttot, "sec"))?;
 
-    let utcref = Epoch::from_gregorian_utc(2013, 1, 1, 0, 0, 0, 0).to_time_scale(hifitime::TimeScale::TAI);
-    let metrefutc = utcref + hifitime::Duration::from_seconds(MET_REF);
-    let gtitminutc = utcref + hifitime::Duration::from_seconds(gtimin);
-    let gtitmaxutc = utcref + hifitime::Duration::from_seconds(gtimax);
-    hdu1.write_key(&mut fptr, "TLTRFMET", (MET_REF, metrefutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
-    hdu1.write_key(&mut fptr, "TSTART", (gtimin, gtitminutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
-    hdu1.write_key(&mut fptr, "TSTOP", (gtimax, gtitmaxutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    let trefutc = Epoch::from_gregorian_utc(2013, 1, 1, 0, 0, 0, 0).to_time_scale(hifitime::TimeScale::TAI);
+    let tltutc = trefutc + hifitime::Duration::from_seconds(TLTRF_MET_REF);
+    let tminutc = trefutc + hifitime::Duration::from_seconds(tmin);
+    let tmaxutc = trefutc + hifitime::Duration::from_seconds(tmax);
+    hdu1.write_key(&mut fptr, "TLTRFMET", (TLTRF_MET_REF, tltutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    hdu1.write_key(&mut fptr, "TSTART", (tmin, tminutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    hdu1.write_key(&mut fptr, "TSTOP", (tmax, tmaxutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
     hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     // ext2
@@ -594,6 +600,75 @@ fn test_leapsecond() {
     assert_eq!(utc9b.to_tai_seconds()-utc9a.to_tai_seconds(), 1672617627.);
     assert_eq!(utc9b.to_utc_seconds()-utc9a.to_utc_seconds(), 1672617627.);
 }
+
+#[test]
+fn test_bisect() {
+    let arr1 = [0,2,4,6,8,10];
+    println!("int arr: {:?}", arr1);
+
+    let mut num1;
+    let mut idx1;
+
+    // case one
+    //       v --- bisect left/right
+    // [0, 2, 4, 6, 8, 10]
+    num1 = 3;
+    idx1 = bisect::bisect_right(&arr1, &num1);
+    println!("  bisect_right: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
+    assert_eq!(idx1, 2);
+
+    idx1 = bisect::bisect_left(&arr1, &num1);
+    println!("  bisect_left: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
+    assert_eq!(idx1, 2);
+
+    // case two
+    //       v --- bisect left
+    //          v --- bisect right
+    // [0, 2, 4, 6, 8, 10]
+    num1 = 4;
+    idx1 = bisect::bisect_right(&arr1, &num1);
+    println!("  bisect_right: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
+    assert_eq!(idx1, 3);
+
+    idx1 = bisect::bisect_left(&arr1, &num1);
+    println!("  bisect_left: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
+    assert_eq!(idx1, 2);
+
+    // float arr
+    let arr2 = [0., 2., 4., 6., 8., 10.];
+    println!("float arr: {:?}", arr2);
+
+    let mut num2;
+    let mut idx2;
+
+    // case three
+    //       v --- bisect left/right
+    // [0, 2, 4, 6, 8, 10]
+    num2 = 3.1;
+    idx2 = bisect::bisect_right(&arr2, &num2);
+    println!("  bisect_right: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
+    assert_eq!(idx2, 2);
+
+    idx2 = bisect::bisect_left(&arr2, &num2);
+    println!("  bisect_left: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
+    assert_eq!(idx2, 2);
+
+    // case four
+    //       v --- bisect left
+    //          v --- bisect right
+    // [0, 2, 4, 6, 8, 10]
+    num2 = 4.0;
+    idx2 = bisect::bisect_right(&arr2, &num2);
+    println!("  bisect_right: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
+    assert_eq!(idx2, 3);
+
+    idx2 = bisect::bisect_left(&arr2, &num2);
+    println!("  bisect_left: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
+    assert_eq!(idx2, 2);
+
+    // assert!(false);
+}
+
 
 ////////////////////////
 fn main() {
