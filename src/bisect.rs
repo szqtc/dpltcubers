@@ -48,7 +48,7 @@ where
 {
     let (mut lo, mut hi) = bounds_to_indices(a, within);
     while lo < hi {
-        let mid = (lo + hi) / 2;
+        let mid = lo + (hi - lo) / 2;
         if a[mid] < *x {
             lo = mid + 1;
         } else {
@@ -89,7 +89,7 @@ where
 {
     let (mut lo, mut hi) = bounds_to_indices(a, within);
     while lo < hi {
-        let mid = (lo + hi) / 2;
+        let mid = lo + (hi - lo) / 2;
         if *x < a[mid] {
             hi = mid;
         } else {
