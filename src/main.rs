@@ -11,7 +11,7 @@ use ndarray::prelude::*;
 const R2D: f64 = 180./consts::PI;
 const D2R: f64 = consts::PI/180.;
 const CTHETA_MIN: f64 = 0.5;
-const MET_REF: f64 = 94608001.0; // 2016-01-01 in seconds
+const MET_REF: f64 = 94608001.0; // 2016-01-01 in seconds from 2013-01-01
 
 ////////////////////////
 // sc loader
@@ -172,9 +172,9 @@ impl HealpixCoordinates {
 ////////////////////////
 // dpltcube main
 ////////////////////////
-fn get_time_str(fmt: &Format) -> String {
-    let dt = Epoch::now().unwrap();
-    Formatter::new(dt, *fmt).to_string()
+fn get_time_str() -> String {
+    let dt = chrono::Local::now();
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 
@@ -188,18 +188,17 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     -> Result<(), Box<dyn std::error::Error>>
 {
     // echo the input params
-    let tfmt = Format::from_str("%Y-%m-%dT%H:%M:%S").unwrap();
-    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmax={} nthreads={}", get_time_str(&tfmt), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmax, nthreads);
+    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmax={} nthreads={}", get_time_str(), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmax, nthreads);
 
     // read files
-    println!("[{}] loading sc file ...", get_time_str(&tfmt));
+    println!("[{}] loading sc file ...", get_time_str());
     let scobj = Spacecraft::read_file(scfile)?;
     let nsc = scobj.len();
     if nsc == 0 {
         return Err(Box::new(Error::new(ErrorKind::InvalidData, "empty scfile")));
     }
 
-    println!("[{}] loading ev file ...", get_time_str(&tfmt));
+    println!("[{}] loading ev file ...", get_time_str());
     let gtiobj = GoodTimeIntervals::read_file(evfile)?;
     let ngti = gtiobj.len();
     if ngti == 0 {
@@ -213,11 +212,9 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     }
 
     // create data
-    println!("[{}] preparing miscellaneous information ...", get_time_str(&tfmt));
+    println!("[{}] preparing miscellaneous information ...", get_time_str());
     let hpxobj = HealpixCoordinates::init_with_order(order.try_into()?)?;
     let npix = hpxobj.len();
-    let ras_deg = hpxobj.get_ras_deg();
-    let decs_deg = hpxobj.get_decs_deg();
 
     let thetabins_usize: usize = thetabins.try_into()?;
     let phibins_usize: usize = phibins.try_into()?;
@@ -237,7 +234,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut lttint8= Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
 
     // find the min/max index
-    println!("[{}] calculating ltcube ...", get_time_str(&tfmt));
+    println!("[{}] calculating ltcube ...", get_time_str());
     let stopwatch = std::time::Instant::now();
 
     let mut idxlo = bisection::bisect_right_by(&scobj.tstart,
@@ -257,12 +254,12 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     ///
 
     let dtime = stopwatch.elapsed();
-    println!("[{}]  DT = {:?} x {}", get_time_str(&tfmt), dtime, nthreads);
+    println!("[{}]  DT = {:?} x {}", get_time_str(), dtime, nthreads);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
         Ok(_) => {
-            println!("[{}] remove the existing output file: {}", get_time_str(&tfmt), outfile);
+            println!("[{}] remove the existing output file: {}", get_time_str(), outfile);
             std::fs::remove_file(outfile)
         },
         _ => Ok(()),
@@ -270,15 +267,16 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut fptr = FitsFile::create(outfile).open()?;
 
     // ext0
-    println!("[{}] preparing save data ...", get_time_str(&tfmt));
+    println!("[{}] preparing save data ...", get_time_str());
+    let timestr = get_time_str();
     let who = whoami::username();
     let hdu0 = fptr.primary_hdu()?;
 
     hdu0.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu0.write_key(&mut fptr, "PHFILE", evfile)?;
     hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
-    hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
-    hdu0.write_key(&mut fptr, "HISTORY", format!("dpltrs ver {}", env!("CARGO_PKG_VERSION")))?;
+    hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
+    hdu0.write_key(&mut fptr, "HISTORY", format!("dpltrs ver. {}", env!("CARGO_PKG_VERSION")))?;
     hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {} [sec] x {}", dtime.as_secs_f32(), nthreads))?;
 
     // ext1
@@ -296,8 +294,8 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_col(&mut fptr, "HL", &ltfd64.flatten().to_vec())?;
     hdu1.write_col(&mut fptr, "TINT", &lttint.flatten().to_vec())?;
     hdu1.write_col(&mut fptr, "TINTLL", &lttint8.flatten().to_vec())?;
-    hdu1.write_col(&mut fptr, "RA", &ras_deg)?;
-    hdu1.write_col(&mut fptr, "DEC", &decs_deg)?;
+    hdu1.write_col(&mut fptr, "RA", &hpxobj.get_ras_deg())?;
+    hdu1.write_col(&mut fptr, "DEC", &hpxobj.get_decs_deg())?;
 
     hdu1.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu1.write_key(&mut fptr, "ZMAX", (zmax, "deg"))?;
@@ -320,7 +318,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "TLTRFMET", (MET_REF, metrefutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
     hdu1.write_key(&mut fptr, "TSTART", (gtimin, gtitminutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
     hdu1.write_key(&mut fptr, "TSTOP", (gtimax, gtitmaxutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
-    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
+    hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     // ext2
     let col21 = ColumnDescription::new("CTHETA_MIN").with_type(ColumnDataType::Float).create()?;
@@ -335,7 +333,7 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {"LIN"} else {"SQ"})?;
     hdu2.write_key(&mut fptr, "CTHMIN", CTHETA_MIN)?;
     hdu2.write_key(&mut fptr, "NCTHBIN", thetabins)?;
-    hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
+    hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     // ext3
     let col31 = ColumnDescription::new("PHI_MIN").with_type(ColumnDataType::Float).create()?;
@@ -350,9 +348,9 @@ fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu3.write_key(&mut fptr, "SCAXIS", "-X-Y-Z")?;
     hdu3.write_key(&mut fptr, "NPHIBIN", phibins)?;
     hdu3.write_key(&mut fptr, "PHIBINAL", "LIN")?;
-    hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), get_time_str(&tfmt)))?;
+    hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
-    println!("[{}] done", get_time_str(&tfmt));
+    println!("[{}] done", get_time_str());
     Ok(())
 }
 
@@ -519,44 +517,88 @@ fn test_healpix() {
     assert_eq!((sindecs[196607], cosdecs[196607], hpxcrd.ras_r[196607]), (-0.005208333333333333, 0.9999864365399607, 5.497787143782138));
 }
 
-// #[test]
+#[test]
 fn test_leapsecond() {
-    // gh_417 in https://github.com/nyx-space/hifitime/issues/417
+    // the test fails when the version of hifitime is < 4.2
+    // see https://github.com/nyx-space/hifitime/issues/417
     use hifitime::{Epoch, Unit};
     let utc0 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 0);
     let tai0 = utc0.to_time_scale(hifitime::TimeScale::TAI);
 
+    // gh_417
     for dt in 1..62 {
         let tai_next = tai0 + Unit::Second * dt;
         let utc_next = utc0 + Unit::Second * dt;
         println!("+{dt} s => TAI = {tai_next}\tTAI as UTC = {tai_next:?}\tUTC = {utc_next}");
     }
 
-    let e = Epoch::from_gregorian_utc(2016, 12, 31, 23, 59, 60, 0);
-    println!("On leap second: {e}");
-    println!(
-        "Equivalent in TAI: {}",
-        e.to_time_scale(hifitime::TimeScale::TAI)
-    );
-
-    // more tests
+    // time convertion around the leap second
     let utc3 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 0);
-    let utc4 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 59);
-    let utc5 = Epoch::from_gregorian_utc_hms(2017, 1, 1, 0, 0, 0);
     println!("T3={}, TAI3={}, UTC3={}", utc3.to_gregorian_str(hifitime::TimeScale::UTC), utc3.to_tai_seconds(), utc3.to_utc_seconds());
-    println!("T4={}, TAI4={}, UTC4={}", utc4.to_gregorian_str(hifitime::TimeScale::UTC), utc4.to_tai_seconds(), utc4.to_utc_seconds());
-    println!("T5={}, TAI5={}, UTC5={}", utc5.to_gregorian_str(hifitime::TimeScale::UTC), utc5.to_tai_seconds(), utc5.to_utc_seconds());
+    assert_eq!(utc3.to_gregorian_str(hifitime::TimeScale::UTC), "2016-12-31T23:59:00 UTC");
+    assert_eq!(utc3.to_gregorian_str(hifitime::TimeScale::TAI), "2016-12-31T23:59:36 TAI");
 
-    println!("TAI seconds:");
-    println!("T4-T3={}", utc4.to_tai_seconds()-utc3.to_tai_seconds());
-    println!("T5-T4={}", utc5.to_tai_seconds()-utc4.to_tai_seconds());
-    println!("T5-T3={}", utc5.to_tai_seconds()-utc3.to_tai_seconds());
+    let utc4 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 59);
+    println!("T4={}, TAI4={}, UTC4={}", utc4.to_gregorian_str(hifitime::TimeScale::UTC), utc4.to_tai_seconds(), utc4.to_utc_seconds());
+    assert_eq!(utc4.to_gregorian_str(hifitime::TimeScale::UTC), "2016-12-31T23:59:59 UTC");
+    assert_eq!(utc4.to_gregorian_str(hifitime::TimeScale::TAI), "2017-01-01T00:00:35 TAI");
+
+    let utc5 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 60);
+    println!("T5={}, TAI5={}, UTC5={}", utc5.to_gregorian_str(hifitime::TimeScale::UTC), utc5.to_tai_seconds(), utc5.to_utc_seconds());
+    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::UTC), "2016-12-31T23:59:60 UTC");
+    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::TAI), "2017-01-01T00:00:36 TAI");
+
+    let utc6 = Epoch::from_gregorian_utc_hms(2017, 1, 1, 0, 0, 0);
+    println!("T6={}, TAI6={}, UTC6={}", utc6.to_gregorian_str(hifitime::TimeScale::UTC), utc6.to_tai_seconds(), utc6.to_utc_seconds());
+    assert_eq!(utc6.to_gregorian_str(hifitime::TimeScale::UTC), "2017-01-01T00:00:00 UTC");
+    assert_eq!(utc6.to_gregorian_str(hifitime::TimeScale::TAI), "2017-01-01T00:00:37 TAI");
+
+    // delta time
+    let dt43_tai = utc4.to_tai_seconds()-utc3.to_tai_seconds();
+    let dt43_utc = utc4.to_utc_seconds()-utc3.to_utc_seconds();
+    println!("T4-T3 = {dt43_tai} (TAI) = {dt43_utc} (UTC)");
+    assert_eq!(dt43_tai, 59.);
+    assert_eq!(dt43_utc, 59.);
+
+    let dt64_tai = utc6.to_tai_seconds()-utc4.to_tai_seconds();
+    let dt64_utc = utc6.to_utc_seconds()-utc4.to_utc_seconds();
+    println!("T6-T4 = {dt64_tai} (TAI) = {dt64_utc} (UTC)");
+    assert_eq!(dt64_tai, 2.);
+    assert_eq!(dt64_utc, 2.);
+
+    let dt65_tai = utc6.to_tai_seconds()-utc5.to_tai_seconds();
+    let dt65_utc = utc6.to_utc_seconds()-utc5.to_utc_seconds();
+    println!("T6-T5 = {dt65_tai} (TAI) = {dt65_utc} (UTC)");
+    assert_eq!(dt65_tai, 1.);
+    assert_eq!(dt65_utc, 1.);
+
+    let dt63_tai = utc6.to_tai_seconds()-utc3.to_tai_seconds();
+    let dt63_utc = utc6.to_utc_seconds()-utc3.to_utc_seconds();
+    println!("T6-T3 = {dt63_tai} (TAI) = {dt63_utc} (UTC)");
+    assert_eq!(dt63_tai, 61.);
+    assert_eq!(dt63_utc, 61.);
+
+    // more cases
+    let utc7a = Epoch::from_gregorian_utc_hms(2017, 12, 31, 23, 59, 59);
+    let utc7b = Epoch::from_gregorian_utc_hms(2018, 1, 1, 0, 0, 0);
+    assert_eq!(utc7b.to_tai_seconds()-utc7a.to_tai_seconds(), 1.);
+    assert_eq!(utc7b.to_utc_seconds()-utc7a.to_utc_seconds(), 1.);
+
+    let utc8a = Epoch::from_gregorian_utc_hms(2015, 6, 30, 23, 59, 59);
+    let utc8b = Epoch::from_gregorian_utc_hms(2015, 7, 1, 0, 0, 0);
+    assert_eq!(utc8b.to_tai_seconds()-utc8a.to_tai_seconds(), 2.);
+    assert_eq!(utc8b.to_utc_seconds()-utc8a.to_utc_seconds(), 2.);
+
+    let utc9a = Epoch::from_gregorian_utc_hms(1972, 1, 1, 0, 0, 0);
+    let utc9b = Epoch::from_gregorian_utc_hms(2025, 1, 1, 0, 0, 0);
+    assert_eq!(utc9b.to_tai_seconds()-utc9a.to_tai_seconds(), 1672617627.);
+    assert_eq!(utc9b.to_utc_seconds()-utc9a.to_utc_seconds(), 1672617627.);
 }
 
 ////////////////////////
 fn main() {
     // parse_run();
-    test_leapsecond();
+    // test_leapsecond();
 
-    // ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 100., 1, false).unwrap();
+    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 100., 1, false).unwrap();
 }
