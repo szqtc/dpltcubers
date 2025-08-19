@@ -188,20 +188,22 @@ fn ltcube_worker(
     lttint: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
     lttint8: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
     scobj: &Spacecraft, gtiobj: &GoodTimeIntervals, hpxobj: &HealpixCoordinates,
+    cthetabounds: &Vec<f64>, phibounds: &Vec<f64>, zmin: f64, zmax: f64,
     isclo: usize, ischi: usize,
     ipixlo: usize, ipixhi: usize) -> f64
 {
-    
+    // todo
     0.
 }
 
 
 pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
-    order: u32, thetabins: u32, phibins: u32, zmax: f64, nthreads: u32, lincth: bool)
+    order: u32, thetabins: u32, phibins: u32, zmin: f64, zmax: f64, nthreads: u32, lincth: bool)
     -> Result<(), Box<dyn std::error::Error>>
 {
     // echo the input params
-    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmax={} nthreads={}", get_time_str(), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmax, nthreads);
+    println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmin={} zmax={} nthreads={}",
+            get_time_str(), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmin, zmax, nthreads);
 
     // read files
     println!("[{}] loading sc file ...", get_time_str());
@@ -220,7 +222,8 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 
     let (gtimin, gtimax): (f64, f64) = (gtiobj.tgstart[0], gtiobj.tgstop[ngti-1]);
     if gtimin<scobj.tstart[0] || gtimax>scobj.tstop[nsc-1] {
-        let errstr = format!("SC file ({}--{}) must cover the entire GTI ({}--{})", scobj.tstart[0], scobj.tstop[nsc-1], gtimin, gtimax);
+        let errstr = format!("SC file ({}--{}) must cover the entire GTI ({}--{})",
+                scobj.tstart[0], scobj.tstop[nsc-1], gtimin, gtimax);
         return Err(Box::new(Error::new(ErrorKind::InvalidData, errstr)));
     }
 
@@ -266,7 +269,8 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 
     // run worker
     let lttot = ltcube_worker(&mut ltfd08, &mut ltfd64, &mut lttint, &mut lttint8,
-            &scobj, &gtiobj, &hpxobj, idxlo, idxhi, 0, npix-1);
+            &scobj, &gtiobj, &hpxobj, &cthetabounds, &phibounds, zmin, zmax,
+            idxlo, idxhi, 0, npix-1);
     // TODO: multithread use axis_chunks_iter_mut() with crossbeam
 
     let dtime = stopwatch.elapsed();
@@ -314,7 +318,8 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_col(&mut fptr, "DEC", &hpxobj.get_decs_deg())?;
 
     hdu1.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
-    hdu1.write_key(&mut fptr, "ZMAX", (zmax, "deg"))?;
+    hdu1.write_key(&mut fptr, "ZMIN", (zmin, "deg, minimum zenith angle"))?;
+    hdu1.write_key(&mut fptr, "ZMAX", (zmax, "deg, maximum zenith angle"))?;
     hdu1.write_key(&mut fptr, "ORDERING", "NESTED")?;
     hdu1.write_key(&mut fptr, "PIXTYPE", "HEALPIX")?;
     hdu1.write_key(&mut fptr, "NSIDE", hpxobj.nside)?;
@@ -346,7 +351,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu2.write_col(&mut fptr, "CTHETA_MAX", &cthetabounds[1..thetabins_usize+1])?;
 
     hdu2.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
-    hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {"LIN"} else {"SQ"})?;
+    hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {("LIN", "linear")} else {("SQ", "squared")})?;
     hdu2.write_key(&mut fptr, "CTHMIN", CTHETA_MIN)?;
     hdu2.write_key(&mut fptr, "NCTHBIN", thetabins)?;
     hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
@@ -363,7 +368,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu3.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu3.write_key(&mut fptr, "SCAXIS", "-X-Y-Z")?;
     hdu3.write_key(&mut fptr, "NPHIBIN", phibins)?;
-    hdu3.write_key(&mut fptr, "PHIBINAL", "LIN")?;
+    hdu3.write_key(&mut fptr, "PHIBINAL", ("LIN", "linear"))?;
     hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     println!("[{}] done", get_time_str());
@@ -435,7 +440,7 @@ fn parse_run() {
     };
 
     // run
-    ltcube_main(&scfile, &evfile, &outfile, order, ntheta, nphi, zmax, nthr, lincth).unwrap();
+    ltcube_main(&scfile, &evfile, &outfile, order, ntheta, nphi, 0., zmax, nthr, lincth).unwrap();
 }
 
 
@@ -750,5 +755,5 @@ fn main() {
     // parse_run();
     // test_leapsecond();
 
-    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 100., 1, false).unwrap();
+    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 1, false).unwrap();
 }
