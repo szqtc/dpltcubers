@@ -7,6 +7,7 @@ use fitsio::FitsFile;
 use fitsio::tables::{ColumnDescription, ColumnDataType};
 use hifitime::prelude::*;
 use ndarray::prelude::*;
+use ndarray::OwnedRepr;
 
 mod bisect;
 
@@ -78,7 +79,7 @@ impl Spacecraft {
 struct GoodTimeIntervals {
     tgstart: Vec<f64>,
     tgstop : Vec<f64>,
-    fds: Vec<i32>,
+    isfd64: Vec<bool>,
 }
 
 impl GoodTimeIntervals {
@@ -99,7 +100,7 @@ impl GoodTimeIntervals {
         let myobj = Self{
             tgstart: hdu.read_col(&mut fptr, "START")?,
             tgstop : hdu.read_col(&mut fptr, "STOP")?,
-            fds : hdu.read_col(&mut fptr, "FD")?,
+            isfd64 : hdu.read_col(&mut fptr, "FD")?.iter().map(|v:&i32| *v==64).collect(),
         };
 
         Ok(myobj)
@@ -181,8 +182,17 @@ fn get_time_str() -> String {
 }
 
 
-fn ltcube_worker() {
+fn ltcube_worker(
+    ltfd08: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
+    ltfd64: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
+    lttint: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
+    lttint8: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
+    scobj: &Spacecraft, gtiobj: &GoodTimeIntervals, hpxobj: &HealpixCoordinates,
+    isclo: usize, ischi: usize,
+    ipixlo: usize, ipixhi: usize) -> f64
+{
     
+    0.
 }
 
 
@@ -230,7 +240,6 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     // println!("{:?}", cthetabounds);
     // println!("{:?}", phibounds);
 
-    let mut lttot = 0.;
     let mut ltfd08 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
     let mut ltfd64 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
     let mut lttint = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
@@ -255,12 +264,13 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     println!("sctmin={}, sctmax={}", scobj.tstart[idxlo], scobj.tstop[idxhi]);
     println!("tmin={}, tmax={}", tmin, tmax);
 
-    ///
-    // run the workers
-    ///
+    // run worker
+    let lttot = ltcube_worker(&mut ltfd08, &mut ltfd64, &mut lttint, &mut lttint8,
+            &scobj, &gtiobj, &hpxobj, idxlo, idxhi, 0, npix-1);
+    // TODO: multithread use axis_chunks_iter_mut() with crossbeam
 
     let dtime = stopwatch.elapsed();
-    println!("[{}]  DT = {:?} x {}", get_time_str(), dtime, nthreads);
+    println!("[{}]  runtime = {:?} x {}, livetime = {} sec", get_time_str(), dtime, nthreads, lttot);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
@@ -467,13 +477,13 @@ fn test_readfiles() {
     let gti = GoodTimeIntervals::read_file("testfiles/test_ev.fits").unwrap();
     println!("ndata={}", gti.len());
     println!("first term:");
-    println!("  start={}, stop={}, fd={}", gti.tgstart[0], gti.tgstop[0], gti.fds[0]);
+    println!("  start={}, stop={}, fd={}", gti.tgstart[0], gti.tgstop[0], gti.isfd64[0]);
 
     //assertions
     assert_eq!(gti.len(), 62);
     assert_eq!(gti.tgstart[0], 94608354f64);
     assert_eq!(gti.tgstop[0], 94610134f64);
-    assert_eq!(gti.fds[0], 64i32);
+    assert_eq!(gti.isfd64[0], true);
 }
 
 #[test]
@@ -613,7 +623,7 @@ fn test_bisect() {
     let mut num1;
     let mut idx1;
 
-    // case one
+    // case 1.0
     //       v --- bisect left/right
     // [0, 2, 4, 6, 8, 10]
     num1 = 3;
@@ -625,7 +635,7 @@ fn test_bisect() {
     println!("  bisect_left: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
     assert_eq!(idx1, 2);
 
-    // case two
+    // case 1.1
     //       v --- bisect left
     //          v --- bisect right
     // [0, 2, 4, 6, 8, 10]
@@ -638,6 +648,36 @@ fn test_bisect() {
     println!("  bisect_left: num={}, idx={}, left={}, right={}", num1, idx1, arr1[idx1-1], arr1[idx1]);
     assert_eq!(idx1, 2);
 
+    // case 1.2
+    num1 = 10;
+    idx1 = bisect::bisect_right(&arr1, &num1);
+    println!("  bisect_right: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 6);
+
+    idx1 = bisect::bisect_left(&arr1, &num1);
+    println!("  bisect_left: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 5);
+
+    // case 1.3
+    num1 = 11;
+    idx1 = bisect::bisect_right(&arr1, &num1);
+    println!("  bisect_right: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 6);
+
+    idx1 = bisect::bisect_left(&arr1, &num1);
+    println!("  bisect_left: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 6);
+
+    // case 1.4
+    num1 = -1;
+    idx1 = bisect::bisect_right(&arr1, &num1);
+    println!("  bisect_right: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 0);
+
+    idx1 = bisect::bisect_left(&arr1, &num1);
+    println!("  bisect_left: num={}, idx={}", num1, idx1);
+    assert_eq!(idx1, 0);
+
     // float arr
     let arr2 = [0., 2., 4., 6., 8., 10.];
     println!("float arr: {:?}", arr2);
@@ -645,7 +685,7 @@ fn test_bisect() {
     let mut num2;
     let mut idx2;
 
-    // case three
+    // case 2.0
     //       v --- bisect left/right
     // [0, 2, 4, 6, 8, 10]
     num2 = 3.1;
@@ -657,7 +697,7 @@ fn test_bisect() {
     println!("  bisect_left: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
     assert_eq!(idx2, 2);
 
-    // case four
+    // case 2.1
     //       v --- bisect left
     //          v --- bisect right
     // [0, 2, 4, 6, 8, 10]
@@ -670,7 +710,35 @@ fn test_bisect() {
     println!("  bisect_left: num={}, idx={}, left={}, right={}", num2, idx2, arr2[idx2-1], arr2[idx2]);
     assert_eq!(idx2, 2);
 
-    // assert!(false);
+    // case 2.2
+    num2 = 10.;
+    idx2 = bisect::bisect_right(&arr2, &num2);
+    println!("  bisect_right: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 6);
+
+    idx2 = bisect::bisect_left(&arr2, &num2);
+    println!("  bisect_left: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 5);
+
+    // case 2.3
+    num2 = 11.;
+    idx2 = bisect::bisect_right(&arr2, &num2);
+    println!("  bisect_right: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 6);
+
+    idx1 = bisect::bisect_left(&arr2, &num2);
+    println!("  bisect_left: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 6);
+
+    // case 2.4
+    num2 = -1.;
+    idx2 = bisect::bisect_right(&arr2, &num2);
+    println!("  bisect_right: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 0);
+
+    idx2 = bisect::bisect_left(&arr2, &num2);
+    println!("  bisect_left: num={}, idx={}", num2, idx2);
+    assert_eq!(idx2, 0);
 }
 
 
