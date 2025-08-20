@@ -274,7 +274,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     // TODO: multithread use axis_chunks_iter_mut() with crossbeam
 
     let dtime = stopwatch.elapsed();
-    println!("[{}]  runtime = {:?} x {}, livetime = {} sec", get_time_str(), dtime, nthreads, lttot);
+    println!("[{}] > runtime = {:?} x {}, livetime = {} sec <", get_time_str(), dtime, nthreads, lttot);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
@@ -332,13 +332,13 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "TIMEUNIT", "s")?;
     hdu1.write_key(&mut fptr, "LIVETIME", (lttot, "sec"))?;
 
-    let trefutc = Epoch::from_gregorian_utc(2013, 1, 1, 0, 0, 0, 0).to_time_scale(hifitime::TimeScale::TAI);
-    let tltutc = trefutc + hifitime::Duration::from_seconds(TLTRF_MET_REF);
-    let tminutc = trefutc + hifitime::Duration::from_seconds(tmin);
-    let tmaxutc = trefutc + hifitime::Duration::from_seconds(tmax);
-    hdu1.write_key(&mut fptr, "TLTRFMET", (TLTRF_MET_REF, tltutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
-    hdu1.write_key(&mut fptr, "TSTART", (tmin, tminutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
-    hdu1.write_key(&mut fptr, "TSTOP", (tmax, tmaxutc.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    let treftai = Epoch::from_gregorian_utc_hms(2013, 1, 1, 0, 0, 0).to_time_scale(hifitime::TimeScale::TAI);
+    let tlttai = treftai + hifitime::Duration::from_seconds(TLTRF_MET_REF);
+    let tmintai = treftai + hifitime::Duration::from_seconds(tmin);
+    let tmaxtai = treftai + hifitime::Duration::from_seconds(tmax);
+    hdu1.write_key(&mut fptr, "TLTRFMET", (TLTRF_MET_REF, tlttai.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    hdu1.write_key(&mut fptr, "TSTART", (tmin, tmintai.to_gregorian_str(hifitime::TimeScale::UTC)))?;
+    hdu1.write_key(&mut fptr, "TSTOP", (tmax, tmaxtai.to_gregorian_str(hifitime::TimeScale::UTC)))?;
     hdu1.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     // ext2
@@ -454,7 +454,7 @@ use super::*;
 #[test]
 fn test_readfiles() {
     ///////// scfile
-    println!("-------test_sc------");
+    println!("Spacecraft:");
     let sp = Spacecraft::read_file("testfiles/test_sc.fits").unwrap();
     println!("ndata={}", sp.len());
     println!("first term:");
@@ -476,9 +476,10 @@ fn test_readfiles() {
     assert_eq!((sp.ra_zth[0], sp.dec_zth[0]), (195.79896545410156f64,-14.79005241394043f64));
     assert_eq!(sp.lvtime[0], 0.8525199890136719f64);
     assert!(!sp.in_saa[0]);
+    println!();
 
     ///////// evfile
-    println!("-------test_ev------");
+    println!("GoodTimeIntervals:");
     let gti = GoodTimeIntervals::read_file("testfiles/test_ev.fits").unwrap();
     println!("ndata={}", gti.len());
     println!("first term:");
@@ -493,7 +494,6 @@ fn test_readfiles() {
 
 #[test]
 fn test_healpix() {
-    println!("-------test_healpix------");
     let order = 6_u8;
     let lon = 12.5_f64*D2R;
     let lat = 13.2_f64*D2R;
@@ -545,7 +545,6 @@ fn test_healpix() {
 #[test]
 #[should_panic] // the bug will be resolved for hifitime >4.2
 fn test_leapsecond() {
-    // the test fails when the version of hifitime is < 4.2
     // see https://github.com/nyx-space/hifitime/issues/417
     use hifitime::{Epoch, Unit};
     let utc0 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 0);
@@ -556,6 +555,10 @@ fn test_leapsecond() {
         let tai_next = tai0 + Unit::Second * dt;
         let utc_next = utc0 + Unit::Second * dt;
         println!("+{dt} s => TAI = {tai_next}\tTAI as UTC = {tai_next:?}\tUTC = {utc_next}");
+        // test if the leap second is set at UTC 00:00:00
+        if dt<61 {
+            assert_eq!(format!("{tai_next:?}"), format!("{utc_next}")); // it will fail when hifitime is < 4.2.0
+        }
     }
 
     // time convertion around the leap second
@@ -571,8 +574,8 @@ fn test_leapsecond() {
 
     let utc5 = Epoch::from_gregorian_utc_hms(2016, 12, 31, 23, 59, 60);
     println!("T5={}, TAI5={}, UTC5={}", utc5.to_gregorian_str(hifitime::TimeScale::UTC), utc5.to_tai_seconds(), utc5.to_utc_seconds());
-    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::UTC), "2016-12-31T23:59:60 UTC");
-    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::TAI), "2017-01-01T00:00:36 TAI");
+    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::UTC), "2016-12-31T23:59:59 UTC"); // hifitime will leap back to 59th sec
+    assert_eq!(utc5.to_gregorian_str(hifitime::TimeScale::TAI), "2017-01-01T00:00:35 TAI");
 
     let utc6 = Epoch::from_gregorian_utc_hms(2017, 1, 1, 0, 0, 0);
     println!("T6={}, TAI6={}, UTC6={}", utc6.to_gregorian_str(hifitime::TimeScale::UTC), utc6.to_tai_seconds(), utc6.to_utc_seconds());
@@ -590,19 +593,19 @@ fn test_leapsecond() {
     let dt64_utc = utc6.to_utc_seconds()-utc4.to_utc_seconds();
     println!("T6-T4 = {dt64_tai} (TAI) = {dt64_utc} (UTC)");
     assert_eq!(dt64_tai, 2.);
-    assert_eq!(dt64_utc, 2.);
+    assert_eq!(dt64_utc, 1.); // no leap seconds in UTC for hifitime
 
-    let dt65_tai = utc6.to_tai_seconds()-utc5.to_tai_seconds();
-    let dt65_utc = utc6.to_utc_seconds()-utc5.to_utc_seconds();
-    println!("T6-T5 = {dt65_tai} (TAI) = {dt65_utc} (UTC)");
-    assert_eq!(dt65_tai, 1.);
-    assert_eq!(dt65_utc, 1.);
+    let dt54_tai = utc5.to_tai_seconds()-utc4.to_tai_seconds();
+    let dt54_utc = utc5.to_utc_seconds()-utc4.to_utc_seconds();
+    println!("T6-T5 = {dt54_tai} (TAI) = {dt54_utc} (UTC)");
+    assert_eq!(dt54_tai, 0.);
+    assert_eq!(dt54_utc, 0.);
 
     let dt63_tai = utc6.to_tai_seconds()-utc3.to_tai_seconds();
     let dt63_utc = utc6.to_utc_seconds()-utc3.to_utc_seconds();
     println!("T6-T3 = {dt63_tai} (TAI) = {dt63_utc} (UTC)");
     assert_eq!(dt63_tai, 61.);
-    assert_eq!(dt63_utc, 61.);
+    assert_eq!(dt63_utc, 60.); // no leap seconds in UTC for hifitime
 
     // more cases
     let utc7a = Epoch::from_gregorian_utc_hms(2017, 12, 31, 23, 59, 59);
@@ -613,12 +616,12 @@ fn test_leapsecond() {
     let utc8a = Epoch::from_gregorian_utc_hms(2015, 6, 30, 23, 59, 59);
     let utc8b = Epoch::from_gregorian_utc_hms(2015, 7, 1, 0, 0, 0);
     assert_eq!(utc8b.to_tai_seconds()-utc8a.to_tai_seconds(), 2.);
-    assert_eq!(utc8b.to_utc_seconds()-utc8a.to_utc_seconds(), 2.);
+    assert_eq!(utc8b.to_utc_seconds()-utc8a.to_utc_seconds(), 1.); // no leap seconds in UTC for hifitime
 
     let utc9a = Epoch::from_gregorian_utc_hms(1972, 1, 1, 0, 0, 0);
     let utc9b = Epoch::from_gregorian_utc_hms(2025, 1, 1, 0, 0, 0);
     assert_eq!(utc9b.to_tai_seconds()-utc9a.to_tai_seconds(), 1672617627.);
-    assert_eq!(utc9b.to_utc_seconds()-utc9a.to_utc_seconds(), 1672617627.);
+    assert_eq!(utc9b.to_utc_seconds()-utc9a.to_utc_seconds(), 1672617600.); // no leap seconds in UTC for hifitime
 }
 
 #[test]
