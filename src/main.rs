@@ -198,12 +198,20 @@ fn ltcube_worker(
 
 
 pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
-    order: u32, thetabins: u32, phibins: u32, zmin: f64, zmax: f64, nthreads: u32, lincth: bool)
+    order: u32, nthetabins: usize, nphibins: usize, zmin: f64, zmax: f64, nthreads: usize, lincth: bool)
     -> Result<(), Box<dyn std::error::Error>>
 {
     // echo the input params
+    let ncpus = num_cpus::get();
+    let nthr = if nthreads > ncpus {
+        ncpus
+    } else if nthreads < 1 {
+        1
+    } else {
+        nthreads
+    };
     println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmin={} zmax={} nthreads={}",
-            get_time_str(), scfile, evfile, outfile, lincth, order, thetabins, phibins, zmin, zmax, nthreads);
+            get_time_str(), scfile, evfile, outfile, lincth, order, nthetabins, nphibins, zmin, zmax, nthr);
 
     // read files
     println!("[{}] loading sc file ...", get_time_str());
@@ -232,21 +240,19 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let hpxobj = HealpixCoordinates::init_with_order(order.try_into()?)?;
     let npix = hpxobj.len();
 
-    let thetabins_usize: usize = thetabins.try_into()?;
-    let phibins_usize: usize = phibins.try_into()?;
     let cthetabounds = if lincth {
-        Array::linspace(CTHETA_MIN, 1., thetabins_usize+1)
+        Array::linspace(CTHETA_MIN, 1., nthetabins+1)
     } else {
-        Array::linspace(1., 0., thetabins_usize+1).map(|v| 1.-(1.-CTHETA_MIN)*v*v)
+        Array::linspace(1., 0., nthetabins+1).map(|v| 1.-(1.-CTHETA_MIN)*v*v)
     }.to_vec();
-    let phibounds = Array::linspace(0., 360., phibins_usize+1).to_vec();
+    let phibounds = Array::linspace(0., 360., nphibins+1).to_vec();
     // println!("{:?}", cthetabounds);
     // println!("{:?}", phibounds);
 
-    let mut ltfd08 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
-    let mut ltfd64 = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
-    let mut lttint = Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
-    let mut lttint8= Array3::<f64>::zeros([npix, phibins_usize, thetabins_usize]);
+    let mut ltfd08 = Array3::<f64>::zeros([npix, nphibins, nthetabins]);
+    let mut ltfd64 = Array3::<f64>::zeros([npix, nphibins, nthetabins]);
+    let mut lttint = Array3::<f64>::zeros([npix, nphibins, nthetabins]);
+    let mut lttint8= Array3::<f64>::zeros([npix, nphibins, nthetabins]);
 
     // find the min/max index
     println!("[{}] calculating ltcube ...", get_time_str());
@@ -274,7 +280,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     // TODO: multithread use axis_chunks_iter_mut() with crossbeam
 
     let dtime = stopwatch.elapsed();
-    println!("[{}] > runtime = {:?} x {}, livetime = {} sec <", get_time_str(), dtime, nthreads, lttot);
+    println!("[{}] > runtime = {:?} x {}, livetime = {} sec <", get_time_str(), dtime, nthr, lttot);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
@@ -297,10 +303,10 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu0.write_key(&mut fptr, "SCFILE", scfile)?;
     hdu0.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
     hdu0.write_key(&mut fptr, "HISTORY", format!("dpltrs ver. {}", env!("CARGO_PKG_VERSION")))?;
-    hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {} [sec] x {}", dtime.as_secs_f32(), nthreads))?;
+    hdu0.write_key(&mut fptr, "HISTORY", format!("DT = {} [sec] x {}", dtime.as_secs_f32(), nthr))?;
 
     // ext1
-    let nvec: usize = (thetabins*phibins).try_into()?;
+    let nvec: usize = nthetabins*nphibins;
     let col1 = ColumnDescription::new("LL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
     let col2 = ColumnDescription::new("HL").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
     let col3 = ColumnDescription::new("TINT").with_type(ColumnDataType::Float).that_repeats(nvec).create()?;
@@ -347,13 +353,13 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let des2 = [col21, col22];
     let hdu2 = fptr.create_table("CTHETABOUNDS".to_string(), &des2)?;
 
-    hdu2.write_col(&mut fptr, "CTHETA_MIN", &cthetabounds[0..thetabins_usize])?;
-    hdu2.write_col(&mut fptr, "CTHETA_MAX", &cthetabounds[1..thetabins_usize+1])?;
+    hdu2.write_col(&mut fptr, "CTHETA_MIN", &cthetabounds[0..nthetabins])?;
+    hdu2.write_col(&mut fptr, "CTHETA_MAX", &cthetabounds[1..nthetabins+1])?;
 
     hdu2.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu2.write_key(&mut fptr, "CTHBINAL", if lincth {("LIN", "linear")} else {("SQ", "squared")})?;
     hdu2.write_key(&mut fptr, "CTHMIN", CTHETA_MIN)?;
-    hdu2.write_key(&mut fptr, "NCTHBIN", thetabins)?;
+    hdu2.write_key(&mut fptr, "NCTHBIN", nthetabins as u32)?;
     hdu2.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
     // ext3
@@ -362,12 +368,12 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let des3 = [col31, col32];
     let hdu3 = fptr.create_table("PHIBOUNDS".to_string(), &des3)?;
 
-    hdu3.write_col(&mut fptr, "PHI_MIN", &phibounds[0..phibins_usize])?;
-    hdu3.write_col(&mut fptr, "PHI_MAX", &phibounds[1..phibins_usize+1])?;
+    hdu3.write_col(&mut fptr, "PHI_MIN", &phibounds[0..nphibins])?;
+    hdu3.write_col(&mut fptr, "PHI_MAX", &phibounds[1..nphibins+1])?;
 
     hdu3.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu3.write_key(&mut fptr, "SCAXIS", "-X-Y-Z")?;
-    hdu3.write_key(&mut fptr, "NPHIBIN", phibins)?;
+    hdu3.write_key(&mut fptr, "NPHIBIN", nphibins as u32)?;
     hdu3.write_key(&mut fptr, "PHIBINAL", ("LIN", "linear"))?;
     hdu3.write_key(&mut fptr, "CREATOR", (who.clone(), timestr.clone()))?;
 
@@ -419,13 +425,13 @@ fn parse_run() {
         None => 6,
     };
 
-    let ntheta: u32 = match matches.opt_str("thetabins") {
-        Some(v) => u32::from_str(&v).expect("thetabins should be an int"),
+    let ntheta: usize = match matches.opt_str("thetabins") {
+        Some(v) => usize::from_str(&v).expect("thetabins should be an int"),
         None => 20,
     };
 
-    let nphi: u32 = match matches.opt_str("phibins") {
-        Some(v) => u32::from_str(&v).expect("phibins should be an int"),
+    let nphi: usize = match matches.opt_str("phibins") {
+        Some(v) => usize::from_str(&v).expect("phibins should be an int"),
         None => 1,
     };
 
@@ -434,8 +440,8 @@ fn parse_run() {
         None => 100.0,
     };
 
-    let nthr: u32 = match matches.opt_str("nthreads") {
-        Some(v) => u32::from_str(&v).expect("nthreads should be an int"),
+    let nthr: usize = match matches.opt_str("nthreads") {
+        Some(v) => usize::from_str(&v).expect("nthreads should be an int"),
         None => 1,
     };
 
