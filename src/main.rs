@@ -2,12 +2,13 @@
 
 use std::f64::consts;
 use std::str::FromStr;
+use std::thread;
 use std::io::{Error, ErrorKind};
 use fitsio::FitsFile;
 use fitsio::tables::{ColumnDescription, ColumnDataType};
 use hifitime::prelude::*;
 use ndarray::prelude::*;
-use ndarray::OwnedRepr;
+use ndarray::ViewRepr;
 
 mod bisect;
 
@@ -183,16 +184,22 @@ fn get_time_str() -> String {
 
 
 fn ltcube_worker(
-    ltfd08: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
-    ltfd64: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
-    lttint: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
-    lttint8: &mut ArrayBase<OwnedRepr<f64>, Dim<[usize; 3]>>,
+    ltfd08: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
+    ltfd64: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
+    lttint: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
+    lttint8: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
     scobj: &Spacecraft, gtiobj: &GoodTimeIntervals, hpxobj: &HealpixCoordinates,
     cthetabounds: &Vec<f64>, phibounds: &Vec<f64>, zmin: f64, zmax: f64,
-    isclo: usize, ischi: usize,
-    ipixlo: usize, ipixhi: usize) -> f64
-{
+    isclo: usize, ischi: usize, // isclo <= isc <= ischi
+    ipixlo: usize, ipixhi: usize // ipixlo <= ipix < ipixhi
+) -> f64 {
     // todo
+    println!("ipixlo={ipixlo} ipixhi={ipixhi}");
+    ltfd08[[0,0,0]] = 1.;
+    ltfd64[[0,0,0]] = 2.;
+    lttint[[0,0,0]] = 3.;
+    lttint8[[0,0,0]] = 4.;
+    println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
     0.
 }
 
@@ -274,13 +281,51 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     println!("tmin={}, tmax={}", tmin, tmax);
 
     // run worker
-    let lttot = ltcube_worker(&mut ltfd08, &mut ltfd64, &mut lttint, &mut lttint8,
+    let mut lttot: f64;
+    let mut ltfd08iter = ltfd08.axis_chunks_iter_mut(Axis(0), nthr);
+    let mut ltfd64iter = ltfd64.axis_chunks_iter_mut(Axis(0), nthr);
+    let mut lttintiter = lttint.axis_chunks_iter_mut(Axis(0), nthr);
+    let mut lttint8iter= lttint8.axis_chunks_iter_mut(Axis(0), nthr);
+
+    let chunk_size = npix/nthr;
+
+    if nthr == 1 {
+        let mut ltfd08p = ltfd08iter.next().unwrap();
+        let mut ltfd64p = ltfd64iter.next().unwrap();
+        let mut lttintp = lttintiter.next().unwrap();
+        let mut lttint8p= lttint8iter.next().unwrap();
+
+        lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
+            &mut lttintp, &mut lttint8p,
             &scobj, &gtiobj, &hpxobj, &cthetabounds, &phibounds, zmin, zmax,
-            idxlo, idxhi, 0, npix-1);
-    // TODO: multithread use axis_chunks_iter_mut() with crossbeam
+            idxlo, idxhi, 0, npix);
+    } else {
+        lttot = 0.;
+        println!("not implemented");
+
+        // thread::scope(|scope| {
+        //     for ith in 0..nthr {
+        //         let mut ltfd08p = ltfd08iter.next().unwrap();
+        //         let mut ltfd64p = ltfd64iter.next().unwrap();
+        //         let mut lttintp = lttintiter.next().unwrap();
+        //         let mut lttint8p= lttint8iter.next().unwrap();
+
+        //         let ipixlop = ith*chunk_size;
+        //         let ipixhip = std::cmp::min(npix, ipixlop+chunk_size);
+
+        //         scope.spawn(move || {
+        //             lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
+        //                 &mut lttintp, &mut lttint8p,
+        //                 &scobj, &gtiobj, &hpxobj, &cthetabounds, &phibounds, zmin, zmax,
+        //                 idxlo, idxhi, ipixlop, ipixhip);
+        //         });
+        //     }
+        // })
+    }
+    println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
 
     let dtime = stopwatch.elapsed();
-    println!("[{}] > runtime = {:?} x {}, livetime = {} sec <", get_time_str(), dtime, nthr, lttot);
+    println!("[{}] >>> runtime = {:?} x {}, livetime = {} sec <<<", get_time_str(), dtime, nthr, lttot);
 
     // create a new file & remove duplicated one
     match std::fs::metadata(outfile) {
