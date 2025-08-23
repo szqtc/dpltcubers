@@ -216,7 +216,6 @@ fn ltcube_worker(
 
     for (gstrt, gstop, isfd64) in izip!(&gtiobj.tgstart, &gtiobj.tgstop, &gtiobj.isfd64) {
         while sstop<=*gstrt && isc<ischi {
-            //println!("ob {:.1} {:.1}", sstop, *gstrt);
             isc += 1;
             sstop = scobj.tstop[isc];
         }
@@ -237,7 +236,6 @@ fn ltcube_worker(
             sstrt = scobj.tstart[isc];
             sstop = scobj.tstop[isc];
             if sstrt>= *gstop {
-                //println!("bl");
                 break;
             }
 
@@ -263,24 +261,20 @@ fn ltcube_worker(
 
             // calc livetime
             let frtl: f64;
-            //let mut tb: usize = 0;
             if sstrt< *gstrt {
                 frtl = *gstrt;
-                //tb = 1;
             } else {
                 frtl = sstrt;
             }
             let frth: f64;
             if sstop> *gstop {
                 frth = *gstop;
-                //tb = 1;
             } else {
                 frth = sstop;
             }
             let slt = scobj.lvtime[isc]*(frth-frtl)/(sstop-sstrt);
             let slttmid = slt*sdtmid;
             lttot += slt;
-            //println!("{} {}", slt, tb);
 
             // loop the healpix pixels
             for ipix0 in 0..npix {
@@ -302,7 +296,6 @@ fn ltcube_worker(
                 if cossepz>1. {
                     cossepz = 1.; // deal with overflow
                 }
-                //println!("{} {}", ipix0, cossepz);
                 if cossepz<=CTHETA_MIN { // too large inclination angle
                     continue;
                 }
@@ -349,13 +342,10 @@ fn ltcube_worker(
                     lttint8[[ipix0, iphi, itheta]] += slttmid;
                 }
             }
-            //assert!(false);
 
             if *gstop >= sstop {
-                //println!("bb {:.1} {:.1} {:.1}", sstop, *gstrt, *gstop);
                 isc+=1;
             } else {
-                //println!("bb");
                 break;
             }
         }
@@ -486,7 +476,6 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
         //     }
         // })
     }
-    //println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
 
     let dtime = stopwatch.elapsed();
     println!("[{}] >>> runtime = {:?} x {}, livetime = {} sec <<<", get_time_str(), dtime, nthr, lttot);
