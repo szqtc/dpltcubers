@@ -172,6 +172,7 @@ def ltcubephi_calculator(
             else:
                 slt = slts[j]
             lttot += slt
+            sltmid = slt*sdtmid
             #print('lt:', slt)
 
             for ipix in range(npix):
@@ -209,10 +210,10 @@ def ltcubephi_calculator(
                     iphi = 0
 
                 #print(ipix, gfd, itheta, iphi)
-                lttint[ipix, iphi, itheta] += slt*sdtmid
+                lttint[ipix, iphi, itheta] += sltmid
                 if gfd == 8:
                     ltfd08[ipix, iphi, itheta] += slt
-                    lttint08[ipix, iphi, itheta] += slt*sdtmid
+                    lttint08[ipix, iphi, itheta] += sltmid
                 elif gfd == 64:
                     ltfd64[ipix, iphi, itheta] += slt
                 else:
