@@ -4,11 +4,12 @@ use std::f64::consts;
 use std::str::FromStr;
 use std::thread;
 use std::io::{Error, ErrorKind};
-use fitsio::FitsFile;
-use fitsio::tables::{ColumnDescription, ColumnDataType};
-use hifitime::prelude::*;
+use itertools::izip;
 use ndarray::prelude::*;
 use ndarray::ViewRepr;
+use hifitime::prelude::*;
+use fitsio::FitsFile;
+use fitsio::tables::{ColumnDescription, ColumnDataType};
 
 mod bisect;
 
@@ -189,18 +190,162 @@ fn ltcube_worker(
     lttint: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
     lttint8: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
     scobj: &Spacecraft, gtiobj: &GoodTimeIntervals, hpxobj: &HealpixCoordinates,
-    cthetabounds: &Vec<f64>, phibounds: &Vec<f64>, zmin: f64, zmax: f64,
+    zmin: f64, zmax: f64, ntheta: usize, nphi: usize, lincth: bool,
     isclo: usize, ischi: usize, // isclo <= isc <= ischi
     ipixlo: usize, ipixhi: usize // ipixlo <= ipix < ipixhi
 ) -> f64 {
-    // todo
-    println!("ipixlo={ipixlo} ipixhi={ipixhi}");
-    ltfd08[[0,0,0]] = 1.;
-    ltfd64[[0,0,0]] = 2.;
-    lttint[[0,0,0]] = 3.;
-    lttint8[[0,0,0]] = 4.;
-    println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
-    0.
+    let npix: usize = ipixhi-ipixlo;
+    let nthetaf64: f64 = ntheta as f64;
+    let nphif64: f64 = nphi as f64;
+
+    let coszmax = (zmax*D2R).cos();
+    let coszmin = (zmin*D2R).cos();
+    let skphis_r = &hpxobj.ras_r[ipixlo..ipixhi];
+    let mut sinthsk: Vec<f64> = Vec::with_capacity(npix);
+    let mut costhsk: Vec<f64> = Vec::with_capacity(npix);
+    for dec_r in &hpxobj.decs_r[ipixlo..ipixhi] {
+        sinthsk.push(dec_r.cos());
+        costhsk.push(dec_r.sin());
+    }
+
+    let mut lttot: f64 = 0.;
+    let mut isc = isclo;
+    let mut sstop: f64 = scobj.tstop[isclo];
+    let sstoplast: f64 = scobj.tstop[ischi];
+    let mut sstrt: f64;
+
+    for (gstrt, gstop, isfd64) in izip!(&gtiobj.tgstart, &gtiobj.tgstop, &gtiobj.isfd64) {
+        while sstop<= *gstrt && isc+1<ischi {
+            isc += 1;
+            sstop = scobj.tstop[isc];
+        }
+
+        if *gstrt >= sstoplast {
+            break;
+        }
+
+        while isc<ischi {
+            // drop the time intervals
+            if scobj.in_saa[isc] || scobj.lvtime[isc]<=0. {
+                isc += 1;
+                continue;
+            }
+
+            // break the loop
+            sstrt = scobj.tstart[isc];
+            if sstrt>= *gstop {
+                break;
+            }
+            sstop = scobj.tstop[isc];
+
+            // prepare angles
+            let sdtmid = (sstrt+sstop)/2. - TLTRF_MET_REF;
+            let srax_r = scobj.ra_x[isc]*D2R;
+            let sdcx_r = scobj.ra_x[isc]*D2R;
+            let sray_r = scobj.ra_y[isc]*D2R;
+            let sdcy_r = scobj.ra_y[isc]*D2R;
+            let sraz_r = scobj.ra_z[isc]*D2R;
+            let sdcz_r = scobj.ra_z[isc]*D2R;
+            let srazth_r = scobj.ra_zth[isc]*D2R;
+            let sdczth_r = scobj.ra_zth[isc]*D2R;
+
+            let sinthx = sdcx_r.cos();
+            let costhx = sdcx_r.sin();
+            let sinthy = sdcy_r.cos();
+            let costhy = sdcy_r.sin();
+            let sinthz = sdcz_r.cos();
+            let costhz = sdcz_r.sin();
+            let sinthzth = sdczth_r.cos();
+            let costhzth = sdczth_r.sin();
+
+            // calc livetime
+            let frtl: f64;
+            if sstrt< *gstrt {
+                frtl = *gstrt;
+            } else {
+                frtl = sstrt;
+            }
+            let frth: f64;
+            if sstop> *gstop {
+                frth = *gstop;
+            } else {
+                frth = sstop;
+            }
+            let slt = scobj.lvtime[isc]*(frth-frtl)/(sstop-sstrt);
+            lttot += slt;
+
+            // loop the healpix pixels
+            for ipix0 in 0..npix {
+                let phi_r: f64 = skphis_r[ipix0];
+                let costh: f64 = costhsk[ipix0];
+                let sinth: f64 = sinthsk[ipix0];
+
+                // constrain the zenith angle
+                let cossepzth = costhzth*costh + sinthzth*sinth*(phi_r-srazth_r).cos();
+                if cossepzth<coszmax || cossepzth>coszmin {
+                    continue;
+                }
+
+                // calc the inclination angle
+                let mut cossepz = -(costhz*costh + sinthz*sinth*(phi_r-sraz_r).cos());
+                if cossepz>1. {
+                    cossepz = 1.; // deal with overflow
+                }
+                if cossepz<=CTHETA_MIN { // too large inclination angle
+                    continue;
+                }
+
+                // calc index of theta bins
+                let idxval: f64;
+                if lincth {
+                    idxval = (1.-cossepz)/(1.-CTHETA_MIN) * nthetaf64;
+                } else {
+                    idxval = ((1.-cossepz)/(1.-CTHETA_MIN)).sqrt() * nthetaf64;
+                }
+                let itheta: usize = ntheta-1 - (idxval as usize);
+
+                // calc index of phi bins
+                let iphi: usize;
+                if nphi>1 && cossepz<1. {
+                    let sinsepz = (1.-cossepz*cossepz).sqrt();
+                    let cossepx = -(costhx*costh + sinthx*sinth*(phi_r-srax_r).cos());
+                    let cosphi = cossepx/sinsepz;
+
+                    if cosphi<=-1. {
+                        iphi = (nphif64/2.) as usize;
+                    } else if cosphi >= 1. {
+                        iphi = 0;
+                    } else {
+                        let phi = cosphi.acos();
+                        if costhy*costh+sinthy*sinth*(phi_r-sray_r).cos() <= 0. {
+                            iphi = (phi/consts::PI/2.*nphif64) as usize;
+                        } else {
+                            iphi = (nphif64 - phi/consts::PI/2.*nphif64) as usize;
+                        }
+                    }
+                } else {
+                    iphi = 0;
+                }
+
+                // set the array
+                lttint[[ipix0, iphi, itheta]] += slt*sdtmid;
+                if *isfd64 {
+                    ltfd64[[ipix0, iphi, itheta]] += slt;
+                } else {
+                    ltfd08[[ipix0, iphi, itheta]] += slt;
+                    lttint8[[ipix0, iphi, itheta]] += slt*sdtmid;
+                }
+            }
+
+            if *gstop >= sstop {
+                isc+=1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    lttot
 }
 
 
@@ -282,12 +427,11 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 
     // run worker
     let mut lttot: f64;
-    let mut ltfd08iter = ltfd08.axis_chunks_iter_mut(Axis(0), nthr);
-    let mut ltfd64iter = ltfd64.axis_chunks_iter_mut(Axis(0), nthr);
-    let mut lttintiter = lttint.axis_chunks_iter_mut(Axis(0), nthr);
-    let mut lttint8iter= lttint8.axis_chunks_iter_mut(Axis(0), nthr);
-
     let chunk_size = npix/nthr;
+    let mut ltfd08iter = ltfd08.axis_chunks_iter_mut(Axis(0), chunk_size);
+    let mut ltfd64iter = ltfd64.axis_chunks_iter_mut(Axis(0), chunk_size);
+    let mut lttintiter = lttint.axis_chunks_iter_mut(Axis(0), chunk_size);
+    let mut lttint8iter= lttint8.axis_chunks_iter_mut(Axis(0), chunk_size);
 
     if nthr == 1 {
         let mut ltfd08p = ltfd08iter.next().unwrap();
@@ -297,7 +441,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 
         lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
             &mut lttintp, &mut lttint8p,
-            &scobj, &gtiobj, &hpxobj, &cthetabounds, &phibounds, zmin, zmax,
+            &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
             idxlo, idxhi, 0, npix);
     } else {
         lttot = 0.;
@@ -316,7 +460,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
         //         scope.spawn(move || {
         //             lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
         //                 &mut lttintp, &mut lttint8p,
-        //                 &scobj, &gtiobj, &hpxobj, &cthetabounds, &phibounds, zmin, zmax,
+        //                 &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
         //                 idxlo, idxhi, ipixlop, ipixhip);
         //         });
         //     }
