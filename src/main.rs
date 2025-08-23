@@ -244,13 +244,13 @@ fn ltcube_worker(
             // prepare angles
             let sdtmid = (sstrt+sstop)/2. - TLTRF_MET_REF;
             let srax_r = scobj.ra_x[isc]*D2R;
-            let sdcx_r = scobj.ra_x[isc]*D2R;
+            let sdcx_r = scobj.dec_x[isc]*D2R;
             let sray_r = scobj.ra_y[isc]*D2R;
-            let sdcy_r = scobj.ra_y[isc]*D2R;
+            let sdcy_r = scobj.dec_y[isc]*D2R;
             let sraz_r = scobj.ra_z[isc]*D2R;
-            let sdcz_r = scobj.ra_z[isc]*D2R;
+            let sdcz_r = scobj.dec_z[isc]*D2R;
             let srazth_r = scobj.ra_zth[isc]*D2R;
-            let sdczth_r = scobj.ra_zth[isc]*D2R;
+            let sdczth_r = scobj.dec_zth[isc]*D2R;
 
             let sinthx = sdcx_r.cos();
             let costhx = sdcx_r.sin();
@@ -293,7 +293,7 @@ fn ltcube_worker(
                 if cossepzth > 1. {
                     cossepzth = 1.;
                 }
-                if cossepzth<coszmax || cossepzth>=coszmin {
+                if cossepzth<coszmax || cossepzth>coszmin {
                     continue;
                 }
 
@@ -302,6 +302,7 @@ fn ltcube_worker(
                 if cossepz>1. {
                     cossepz = 1.; // deal with overflow
                 }
+                //println!("{} {}", ipix0, cossepz);
                 if cossepz<=CTHETA_MIN { // too large inclination angle
                     continue;
                 }
@@ -339,6 +340,7 @@ fn ltcube_worker(
                 }
 
                 // set the array
+                //println!("{} {} {}", ipix0, itheta, iphi);
                 lttint[[ipix0, iphi, itheta]] += slttmid; 
                 if *isfd64 {
                     ltfd64[[ipix0, iphi, itheta]] += slt;
@@ -347,6 +349,7 @@ fn ltcube_worker(
                     lttint8[[ipix0, iphi, itheta]] += slttmid;
                 }
             }
+            //assert!(false);
 
             if *gstop >= sstop {
                 //println!("bb {:.1} {:.1} {:.1}", sstop, *gstrt, *gstop);
