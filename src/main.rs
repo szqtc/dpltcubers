@@ -215,7 +215,8 @@ fn ltcube_worker(
     let mut sstrt: f64;
 
     for (gstrt, gstop, isfd64) in izip!(&gtiobj.tgstart, &gtiobj.tgstop, &gtiobj.isfd64) {
-        while sstop<= *gstrt && isc+1<ischi {
+        while sstop<=*gstrt && isc<ischi {
+            //println!("ob {:.1} {:.1}", sstop, *gstrt);
             isc += 1;
             sstop = scobj.tstop[isc];
         }
@@ -224,19 +225,21 @@ fn ltcube_worker(
             break;
         }
 
-        while isc<ischi {
+        while isc<=ischi {
             // drop the time intervals
             if scobj.in_saa[isc] || scobj.lvtime[isc]<=0. {
+                //println!("{}, {}", scobj.in_saa[isc], scobj.lvtime[isc]);
                 isc += 1;
                 continue;
             }
 
             // break the loop
             sstrt = scobj.tstart[isc];
+            sstop = scobj.tstop[isc];
             if sstrt>= *gstop {
+                //println!("bl");
                 break;
             }
-            sstop = scobj.tstop[isc];
 
             // prepare angles
             let sdtmid = (sstrt+sstop)/2. - TLTRF_MET_REF;
@@ -260,19 +263,24 @@ fn ltcube_worker(
 
             // calc livetime
             let frtl: f64;
+            //let mut tb: usize = 0;
             if sstrt< *gstrt {
                 frtl = *gstrt;
+                //tb = 1;
             } else {
                 frtl = sstrt;
             }
             let frth: f64;
             if sstop> *gstop {
                 frth = *gstop;
+                //tb = 1;
             } else {
                 frth = sstop;
             }
             let slt = scobj.lvtime[isc]*(frth-frtl)/(sstop-sstrt);
+            let slttmid = slt*sdtmid;
             lttot += slt;
+            //println!("{} {}", slt, tb);
 
             // loop the healpix pixels
             for ipix0 in 0..npix {
@@ -281,8 +289,11 @@ fn ltcube_worker(
                 let sinth: f64 = sinthsk[ipix0];
 
                 // constrain the zenith angle
-                let cossepzth = costhzth*costh + sinthzth*sinth*(phi_r-srazth_r).cos();
-                if cossepzth<coszmax || cossepzth>coszmin {
+                let mut cossepzth = costhzth*costh + sinthzth*sinth*(phi_r-srazth_r).cos();
+                if cossepzth > 1. {
+                    cossepzth = 1.;
+                }
+                if cossepzth<coszmax || cossepzth>=coszmin {
                     continue;
                 }
 
@@ -328,18 +339,20 @@ fn ltcube_worker(
                 }
 
                 // set the array
-                lttint[[ipix0, iphi, itheta]] += slt*sdtmid;
+                lttint[[ipix0, iphi, itheta]] += slttmid; 
                 if *isfd64 {
                     ltfd64[[ipix0, iphi, itheta]] += slt;
                 } else {
                     ltfd08[[ipix0, iphi, itheta]] += slt;
-                    lttint8[[ipix0, iphi, itheta]] += slt*sdtmid;
+                    lttint8[[ipix0, iphi, itheta]] += slttmid;
                 }
             }
 
             if *gstop >= sstop {
+                //println!("bb {:.1} {:.1} {:.1}", sstop, *gstrt, *gstop);
                 isc+=1;
             } else {
+                //println!("bb");
                 break;
             }
         }
@@ -364,6 +377,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     };
     println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmin={} zmax={} nthreads={}",
             get_time_str(), scfile, evfile, outfile, lincth, order, nthetabins, nphibins, zmin, zmax, nthr);
+    assert!(nthetabins>=1 && nphibins>=1);
 
     // read files
     println!("[{}] loading sc file ...", get_time_str());
@@ -420,13 +434,13 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let tmin = std::cmp::max_by(gtimin, scobj.tstart[idxlo], comp_f);
     let tmax = std::cmp::min_by(gtimax, scobj.tstop[idxhi], comp_f);
     // debug
-    println!("idxlo={}, idxhi={}", idxlo, idxhi);
-    println!("gtitmin={}, gtitmax={}", gtimin, gtimax);
-    println!("sctmin={}, sctmax={}", scobj.tstart[idxlo], scobj.tstop[idxhi]);
-    println!("tmin={}, tmax={}", tmin, tmax);
+    //println!("idxlo={}, idxhi={}", idxlo, idxhi);
+    //println!("gtitmin={}, gtitmax={}", gtimin, gtimax);
+    //println!("sctmin={}, sctmax={}", scobj.tstart[idxlo], scobj.tstop[idxhi]);
+    //println!("tmin={}, tmax={}", tmin, tmax);
 
     // run worker
-    let mut lttot: f64;
+    let lttot: f64;
     let chunk_size = npix/nthr;
     let mut ltfd08iter = ltfd08.axis_chunks_iter_mut(Axis(0), chunk_size);
     let mut ltfd64iter = ltfd64.axis_chunks_iter_mut(Axis(0), chunk_size);
@@ -458,15 +472,18 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
         //         let ipixhip = std::cmp::min(npix, ipixlop+chunk_size);
 
         //         scope.spawn(move || {
-        //             lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
+        //             let lttot0 = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
         //                 &mut lttintp, &mut lttint8p,
         //                 &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
         //                 idxlo, idxhi, ipixlop, ipixhip);
         //         });
+        //         if ith == 0 {
+        //             lttot = lttot0;
+        //         }
         //     }
         // })
     }
-    println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
+    //println!("ltfd08[0,0,0]={}, ltfd64[0,0,0]={} lttint[0,0,0]={} lttint8[0,0,0]={}", ltfd08[[0,0,0]], ltfd64[[0,0,0]], lttint[[0,0,0]], lttint8[[0,0,0]]);
 
     let dtime = stopwatch.elapsed();
     println!("[{}] >>> runtime = {:?} x {}, livetime = {} sec <<<", get_time_str(), dtime, nthr, lttot);
