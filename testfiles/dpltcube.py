@@ -437,7 +437,7 @@ def ltcube_phi(
     hdu1.header['TLTRFMET'] = (metref, 'TLT ref. time in MET')
     t0 = utcref + atime.TimeDelta(gtistart[0], scale='tt', format='sec')
     hdu1.header['TSTART'] = (gtistart[0], t0.isot)
-    t1 = utcref + atime.TimeDelta(gtistart[-1], scale='tt', format='sec')
+    t1 = utcref + atime.TimeDelta(gtistop[-1], scale='tt', format='sec')
     hdu1.header['TSTOP'] = (gtistop[-1], t1.isot)
 
     col1 = fits.Column(name='CTHETA_MIN', format='1E', array=cthetabounds[:-1])
