@@ -966,8 +966,8 @@ fn test_bisect() {
 
 ////////////////////////
 fn main() {
-    // parse_run();
+    parse_run();
     // test_leapsecond();
 
-    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 2, false).unwrap();
+    //ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 2, false).unwrap();
 }
