@@ -451,30 +451,37 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
             &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
             idxlo, idxhi, 0, npix);
     } else {
-        lttot = 0.;
-        println!("not implemented");
+        // lttot = 0.;
+        // println!("not implemented");
 
-        // thread::scope(|scope| {
-        //     for ith in 0..nthr {
-        //         let mut ltfd08p = ltfd08iter.next().unwrap();
-        //         let mut ltfd64p = ltfd64iter.next().unwrap();
-        //         let mut lttintp = lttintiter.next().unwrap();
-        //         let mut lttint8p= lttint8iter.next().unwrap();
+        let mut lttots = Array1::<f64>::zeros(nthr);
+        let mut lttotsiter = lttots.axis_chunks_iter_mut(Axis(0), 1);
 
-        //         let ipixlop = ith*chunk_size;
-        //         let ipixhip = std::cmp::min(npix, ipixlop+chunk_size);
+        thread::scope(|scope| {
+            for ith in 0..nthr {
+                let mut ltfd08p = ltfd08iter.next().unwrap();
+                let mut ltfd64p = ltfd64iter.next().unwrap();
+                let mut lttintp = lttintiter.next().unwrap();
+                let mut lttint8p= lttint8iter.next().unwrap();
+                let mut lttotsp = lttotsiter.next().unwrap();
 
-        //         scope.spawn(move || {
-        //             let lttot0 = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
-        //                 &mut lttintp, &mut lttint8p,
-        //                 &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
-        //                 idxlo, idxhi, ipixlop, ipixhip);
-        //         });
-        //         if ith == 0 {
-        //             lttot = lttot0;
-        //         }
-        //     }
-        // })
+                let ipixlop = ith*chunk_size;
+                let ipixhip = std::cmp::min(npix, ipixlop+chunk_size);
+
+                let scobjref = &scobj;
+                let gtiobjref = &gtiobj;
+                let hpxobjref = &hpxobj;
+
+                scope.spawn(move || {
+                    let res = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
+                        &mut lttintp, &mut lttint8p,
+                        scobjref, gtiobjref, hpxobjref, zmin, zmax, nthetabins, nphibins, lincth,
+                        idxlo, idxhi, ipixlop, ipixhip);
+                    lttotsp[0] = res;
+                });
+            }
+        });
+        lttot = lttots[0];
     }
 
     let dtime = stopwatch.elapsed();
@@ -962,5 +969,5 @@ fn main() {
     // parse_run();
     // test_leapsecond();
 
-    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 1, false).unwrap();
+    ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 2, false).unwrap();
 }
