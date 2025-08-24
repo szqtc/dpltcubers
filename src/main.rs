@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::f64::consts;
 use std::str::FromStr;
 use std::thread;
@@ -160,16 +158,6 @@ impl HealpixCoordinates {
     #[inline]
     pub fn get_decs_deg(&self) -> Vec<f64> {
         self.decs_r.iter().map(|v| v*R2D).collect()
-    }
-
-    #[inline]
-    pub fn get_sindecs(&self) -> Vec<f64> {
-        self.decs_r.iter().map(|v| v.sin()).collect()
-    }
-
-    #[inline]
-    pub fn get_cosdecs(&self) -> Vec<f64> {
-        self.decs_r.iter().map(|v| v.cos()).collect()
     }
 
 }
@@ -451,9 +439,6 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
             &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
             idxlo, idxhi, 0, npix);
     } else {
-        // lttot = 0.;
-        // println!("not implemented");
-
         let mut lttots = Array1::<f64>::zeros(nthr);
         let mut lttotsiter = lttots.axis_chunks_iter_mut(Axis(0), 1);
 
@@ -473,11 +458,10 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
                 let hpxobjref = &hpxobj;
 
                 scope.spawn(move || {
-                    let res = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
+                    lttotsp[0] = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
                         &mut lttintp, &mut lttint8p,
                         scobjref, gtiobjref, hpxobjref, zmin, zmax, nthetabins, nphibins, lincth,
                         idxlo, idxhi, ipixlop, ipixhip);
-                    lttotsp[0] = res;
                 });
             }
         });
@@ -531,14 +515,15 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     hdu1.write_key(&mut fptr, "TELESCOP", "DAMPE")?;
     hdu1.write_key(&mut fptr, "ZMIN", (zmin, "deg, minimum zenith angle"))?;
     hdu1.write_key(&mut fptr, "ZMAX", (zmax, "deg, maximum zenith angle"))?;
-    hdu1.write_key(&mut fptr, "ORDERING", "NESTED")?;
-    hdu1.write_key(&mut fptr, "PIXTYPE", "HEALPIX")?;
-    hdu1.write_key(&mut fptr, "NSIDE", hpxobj.nside)?;
     hdu1.write_key(&mut fptr, "COORDSYS", "CEL")?;
     hdu1.write_key(&mut fptr, "RADECSYS", ("FK5", "J2000"))?;
+    hdu1.write_key(&mut fptr, "PIXTYPE", "HEALPIX")?;
+    hdu1.write_key(&mut fptr, "INDXSCHM", "IMPLICIT")?;
+    hdu1.write_key(&mut fptr, "ORDERING", "NESTED")?;
+    hdu1.write_key(&mut fptr, "ORDER", hpxobj.order)?;
+    hdu1.write_key(&mut fptr, "NSIDE", hpxobj.nside)?;
     hdu1.write_key(&mut fptr, "FIRSTPIX", 0)?;
     hdu1.write_key(&mut fptr, "LASTPIX", hpxobj.npix-1)?;
-    hdu1.write_key(&mut fptr, "INDXSCHM", "IMPLICIT")?;
     hdu1.write_key(&mut fptr, "TIMESYS", "TT")?;
     hdu1.write_key(&mut fptr, "TIMEUNIT", "s")?;
     hdu1.write_key(&mut fptr, "LIVETIME", (lttot, "sec"))?;
@@ -594,7 +579,8 @@ fn parse_run() {
     // define arg
     let args: Vec<String> = std::env::args().collect();
     let prog = args[0].clone();
-    let brief = format!("Usage: {} -s SCFILE -e EVFILE -o OUTFILE [options]\na simple tool to calculate the livetime cube of DAMPE", prog);
+    let brief = format!("Usage: {} -s SCFILE -e EVFILE -o OUTFILE [options]\n\na simple tool to calculate the livetime cube of DAMPE (ver. {})",
+            prog, env!("CARGO_PKG_VERSION"));
 
     let mut opts = getopts::Options::new();
     opts.reqopt("s", "scfile", "the name of SC file", "SCFILE");
@@ -966,8 +952,7 @@ fn test_bisect() {
 
 ////////////////////////
 fn main() {
-    parse_run();
-    // test_leapsecond();
+    // ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 5, false).unwrap();
 
-    //ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 2, false).unwrap();
+    parse_run();
 }
