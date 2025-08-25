@@ -189,12 +189,8 @@ fn ltcube_worker(
     let coszmax = (zmax*D2R).cos();
     let coszmin = (zmin*D2R).cos();
     let skphis_r = &hpxobj.ras_r[ipixlo..ipixhi];
-    let mut sinthsk: Vec<f64> = Vec::with_capacity(npix);
-    let mut costhsk: Vec<f64> = Vec::with_capacity(npix);
-    for dec_r in &hpxobj.decs_r[ipixlo..ipixhi] {
-        sinthsk.push(dec_r.cos());
-        costhsk.push(dec_r.sin());
-    }
+    let sinthsk: Vec<f64> = hpxobj.decs_r[ipixlo..ipixhi].iter().map(|v| v.cos()).collect();
+    let costhsk: Vec<f64> = hpxobj.decs_r[ipixlo..ipixhi].iter().map(|v| v.sin()).collect();
 
     let mut lttot: f64 = 0.;
     let mut isc = isclo;
@@ -248,18 +244,16 @@ fn ltcube_worker(
             let costhzth = sdczth_r.sin();
 
             // calc livetime
-            let frtl: f64;
-            if sstrt< *gstrt {
-                frtl = *gstrt;
+            let frtl: f64 = if sstrt< *gstrt {
+                *gstrt
             } else {
-                frtl = sstrt;
-            }
-            let frth: f64;
-            if sstop> *gstop {
-                frth = *gstop;
+                sstrt
+            };
+            let frth: f64 = if sstop> *gstop {
+                *gstop
             } else {
-                frth = sstop;
-            }
+                sstop
+            };
             let slt = scobj.lvtime[isc]*(frth-frtl)/(sstop-sstrt);
             let slttmid = slt*sdtmid;
             lttot += slt;
@@ -289,12 +283,11 @@ fn ltcube_worker(
                 }
 
                 // calc index of theta bins
-                let idxval: f64;
-                if lincth {
-                    idxval = (1.-cossepz)/(1.-CTHETA_MIN) * nthetaf64;
+                let idxval: f64 = if lincth {
+                    (1.-cossepz)/(1.-CTHETA_MIN) * nthetaf64
                 } else {
-                    idxval = ((1.-cossepz)/(1.-CTHETA_MIN)).sqrt() * nthetaf64;
-                }
+                    ((1.-cossepz)/(1.-CTHETA_MIN)).sqrt() * nthetaf64
+                };
                 let itheta: usize = ntheta-1 - (idxval as usize);
 
                 // calc index of phi bins
@@ -724,8 +717,8 @@ fn test_healpix() {
     let dt = start.elapsed();
     println!("init time = {:?}", dt);
 
-    let sindecs = hpxcrd.get_sindecs();
-    let cosdecs = hpxcrd.get_cosdecs();
+    let sindecs: Vec<_> = hpxcrd.decs_r.iter().map(|v| v.sin()).collect();
+    let cosdecs: Vec<_> = hpxcrd.decs_r.iter().map(|v| v.cos()).collect();
     for ipix in 0..10 {
         println!("ipix={}, sindec={}, cosdec={}, ra_r={}", ipix, sindecs[ipix], cosdecs[ipix], hpxcrd.ras_r[ipix]);
     }
