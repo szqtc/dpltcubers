@@ -733,7 +733,7 @@ fn test_healpix() {
 }
 
 #[test]
-#[should_panic] // the bug will be resolved for hifitime >4.2
+//#[should_panic] // the bug will be resolved for hifitime >4.2
 fn test_leapsecond() {
     // see https://github.com/nyx-space/hifitime/issues/417
     use hifitime::{Epoch, Unit};
