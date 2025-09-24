@@ -8,6 +8,7 @@ use ndarray::ViewRepr;
 use hifitime::prelude::*;
 use fitsio::FitsFile;
 use fitsio::tables::{ColumnDescription, ColumnDataType};
+use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
 
 mod bisect;
 
@@ -180,7 +181,8 @@ fn ltcube_worker(
     scobj: &Spacecraft, gtiobj: &GoodTimeIntervals, hpxobj: &HealpixCoordinates,
     zmin: f64, zmax: f64, ntheta: usize, nphi: usize, lincth: bool,
     isclo: usize, ischi: usize, // isclo <= isc <= ischi
-    ipixlo: usize, ipixhi: usize // ipixlo <= ipix < ipixhi
+    ipixlo: usize, ipixhi: usize, // ipixlo <= ipix < ipixhi
+    pgbar: ProgressBar
 ) -> f64 {
     let npix: usize = ipixhi-ipixlo;
     let nthetaf64: f64 = ntheta as f64;
@@ -215,6 +217,7 @@ fn ltcube_worker(
                 isc += 1;
                 continue;
             }
+            pgbar.set_position((isc-isclo).try_into().unwrap());
 
             // break the loop
             sstrt = scobj.tstart[isc];
@@ -331,6 +334,7 @@ fn ltcube_worker(
             }
         }
     }
+    pgbar.finish_and_clear();
 
     lttot
 }
@@ -421,21 +425,27 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut lttintiter = lttint.axis_chunks_iter_mut(Axis(0), chunk_size);
     let mut lttint8iter= lttint8.axis_chunks_iter_mut(Axis(0), chunk_size);
 
+
     if nthr == 1 {
         let mut ltfd08p = ltfd08iter.next().unwrap();
         let mut ltfd64p = ltfd64iter.next().unwrap();
         let mut lttintp = lttintiter.next().unwrap();
         let mut lttint8p= lttint8iter.next().unwrap();
 
+        let pb = ProgressBar::new((idxhi-idxlo+1).try_into().unwrap());
+        pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:50}  {percent:>3}%  ETA={eta}").unwrap());
+
         lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
             &mut lttintp, &mut lttint8p,
             &scobj, &gtiobj, &hpxobj, zmin, zmax, nthetabins, nphibins, lincth,
-            idxlo, idxhi, 0, npix);
+            idxlo, idxhi, 0, npix, pb);
     } else {
         let mut lttots = Array1::<f64>::zeros(nthr);
         let mut lttotsiter = lttots.axis_chunks_iter_mut(Axis(0), 1);
 
         thread::scope(|scope| {
+            let mpb = MultiProgress::new();
+
             for ith in 0..nthr {
                 let mut ltfd08p = ltfd08iter.next().unwrap();
                 let mut ltfd64p = ltfd64iter.next().unwrap();
@@ -450,11 +460,15 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
                 let gtiobjref = &gtiobj;
                 let hpxobjref = &hpxobj;
 
+                let pb = ProgressBar::new((idxhi-idxlo+1).try_into().unwrap());
+                let npb = mpb.add(pb);
+                npb.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:50}  {percent:>3}%  ETA={eta}").unwrap());
+
                 scope.spawn(move || {
                     lttotsp[0] = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
                         &mut lttintp, &mut lttint8p,
                         scobjref, gtiobjref, hpxobjref, zmin, zmax, nthetabins, nphibins, lincth,
-                        idxlo, idxhi, ipixlop, ipixhip);
+                        idxlo, idxhi, ipixlop, ipixhip, npb);
                 });
             }
         });
