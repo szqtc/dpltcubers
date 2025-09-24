@@ -425,7 +425,6 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     let mut lttintiter = lttint.axis_chunks_iter_mut(Axis(0), chunk_size);
     let mut lttint8iter= lttint8.axis_chunks_iter_mut(Axis(0), chunk_size);
 
-
     if nthr == 1 {
         let mut ltfd08p = ltfd08iter.next().unwrap();
         let mut ltfd64p = ltfd64iter.next().unwrap();
@@ -959,7 +958,5 @@ fn test_bisect() {
 
 ////////////////////////
 fn main() {
-    // ltcube_main("testfiles/test_sc.fits", "testfiles/test_ev.fits", "testfiles/output_ltcube.fits", 5, 20, 2, 0., 100., 5, false).unwrap();
-
     parse_run();
 }
