@@ -237,14 +237,10 @@ fn ltcube_worker(
             let srazth_r = scobj.ra_zth[isc]*D2R;
             let sdczth_r = scobj.dec_zth[isc]*D2R;
 
-            let sinthx = sdcx_r.cos();
-            let costhx = sdcx_r.sin();
-            let sinthy = sdcy_r.cos();
-            let costhy = sdcy_r.sin();
-            let sinthz = sdcz_r.cos();
-            let costhz = sdcz_r.sin();
-            let sinthzth = sdczth_r.cos();
-            let costhzth = sdczth_r.sin();
+            let (costhx, sinthx) = sdcx_r.sin_cos();
+            let (costhy, sinthy) = sdcy_r.sin_cos();
+            let (costhz, sinthz) = sdcz_r.sin_cos();
+            let (costhzth, sinthzth) = sdczth_r.sin_cos();
 
             // calc livetime
             let frtl: f64 = if sstrt< *gstrt {
