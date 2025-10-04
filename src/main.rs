@@ -188,11 +188,15 @@ fn ltcube_worker(
     let nthetaf64: f64 = ntheta as f64;
     let nphif64: f64 = nphi as f64;
 
+    let inv_1_minus_ctheta_min = 1.0 / (1.0 - CTHETA_MIN);
+    let nphi_over_2pi = nphif64/consts::PI/2.;
+
     let coszmax = (zmax*D2R).cos();
     let coszmin = (zmin*D2R).cos();
-    let skphis_r = &hpxobj.ras_r[ipixlo..ipixhi];
     let sinthsk: Vec<f64> = hpxobj.decs_r[ipixlo..ipixhi].iter().map(|v| v.cos()).collect();
     let costhsk: Vec<f64> = hpxobj.decs_r[ipixlo..ipixhi].iter().map(|v| v.sin()).collect();
+    let sinskphis: Vec<f64> = hpxobj.ras_r[ipixlo..ipixhi].iter().map(|v| v.sin()).collect();
+    let cosskphis: Vec<f64> = hpxobj.ras_r[ipixlo..ipixhi].iter().map(|v| v.cos()).collect();
 
     let mut lttot: f64 = 0.;
     let mut isc = isclo;
@@ -229,14 +233,18 @@ fn ltcube_worker(
             // prepare angles
             let sdtmid = (sstrt+sstop)/2. - TLTRF_MET_REF;
             let srax_r = scobj.ra_x[isc]*D2R;
-            let sdcx_r = scobj.dec_x[isc]*D2R;
             let sray_r = scobj.ra_y[isc]*D2R;
-            let sdcy_r = scobj.dec_y[isc]*D2R;
             let sraz_r = scobj.ra_z[isc]*D2R;
-            let sdcz_r = scobj.dec_z[isc]*D2R;
             let srazth_r = scobj.ra_zth[isc]*D2R;
-            let sdczth_r = scobj.dec_zth[isc]*D2R;
+            let (sinrax, cosrax) = srax_r.sin_cos();
+            let (sinray, cosray) = sray_r.sin_cos();
+            let (sinraz, cosraz) = sraz_r.sin_cos();
+            let (sinrazth, cosrazth) = srazth_r.sin_cos();
 
+            let sdcx_r = scobj.dec_x[isc]*D2R;
+            let sdcy_r = scobj.dec_y[isc]*D2R;
+            let sdcz_r = scobj.dec_z[isc]*D2R;
+            let sdczth_r = scobj.dec_zth[isc]*D2R;
             let (costhx, sinthx) = sdcx_r.sin_cos();
             let (costhy, sinthy) = sdcy_r.sin_cos();
             let (costhz, sinthz) = sdcz_r.sin_cos();
@@ -259,12 +267,14 @@ fn ltcube_worker(
 
             // loop the healpix pixels
             for ipix0 in 0..npix {
-                let phi_r: f64 = skphis_r[ipix0];
                 let costh: f64 = costhsk[ipix0];
                 let sinth: f64 = sinthsk[ipix0];
+                let cosskphi: f64 = cosskphis[ipix0];
+                let sinskphi: f64 = sinskphis[ipix0];
 
                 // constrain the zenith angle
-                let mut cossepzth = costhzth*costh + sinthzth*sinth*(phi_r-srazth_r).cos();
+                let cos_skphi_minus_razth = cosskphi*cosrazth + sinskphi*sinrazth;
+                let mut cossepzth = costhzth*costh + sinthzth*sinth*cos_skphi_minus_razth;
                 if cossepzth > 1. {
                     cossepzth = 1.;
                 }
@@ -273,7 +283,8 @@ fn ltcube_worker(
                 }
 
                 // calc the inclination angle
-                let mut cossepz = -(costhz*costh + sinthz*sinth*(phi_r-sraz_r).cos());
+                let cos_skphi_minus_raz = cosskphi*cosraz + sinskphi*sinraz;
+                let mut cossepz = -(costhz*costh + sinthz*sinth*cos_skphi_minus_raz);
                 if cossepz>1. {
                     cossepz = 1.; // deal with overflow
                 }
@@ -283,9 +294,9 @@ fn ltcube_worker(
 
                 // calc index of theta bins
                 let idxval: f64 = if lincth {
-                    (1.-cossepz)/(1.-CTHETA_MIN) * nthetaf64
+                    (1.-cossepz)*inv_1_minus_ctheta_min * nthetaf64
                 } else {
-                    ((1.-cossepz)/(1.-CTHETA_MIN)).sqrt() * nthetaf64
+                    ((1.-cossepz)*inv_1_minus_ctheta_min).sqrt() * nthetaf64
                 };
                 let itheta: usize = ntheta-1 - (idxval as usize);
 
@@ -293,7 +304,8 @@ fn ltcube_worker(
                 let iphi: usize;
                 if nphi>1 && cossepz<1. {
                     let sinsepz = (1.-cossepz*cossepz).sqrt();
-                    let cossepx = -(costhx*costh + sinthx*sinth*(phi_r-srax_r).cos());
+                    let cos_skphi_minus_rax = cosskphi*cosrax + sinskphi*sinrax;
+                    let cossepx = -(costhx*costh + sinthx*sinth*cos_skphi_minus_rax);
                     let cosphi = cossepx/sinsepz;
 
                     if cosphi<=-1. {
@@ -302,10 +314,11 @@ fn ltcube_worker(
                         iphi = 0;
                     } else {
                         let phi = cosphi.acos();
-                        if costhy*costh+sinthy*sinth*(phi_r-sray_r).cos() <= 0. {
-                            iphi = (phi/consts::PI/2.*nphif64) as usize;
+                        let cos_skphi_minus_ray = cosskphi*cosray + sinskphi*sinray;
+                        if costhy*costh+sinthy*sinth*cos_skphi_minus_ray <= 0. {
+                            iphi = (phi*nphi_over_2pi) as usize;
                         } else {
-                            iphi = (nphif64 - phi/consts::PI/2.*nphif64) as usize;
+                            iphi = (nphif64 - phi*nphi_over_2pi) as usize;
                         }
                     }
                 } else {
@@ -314,14 +327,16 @@ fn ltcube_worker(
 
                 // set the array
                 //println!("{} {} {}", ipix0, itheta, iphi);
-                lttint[[ipix0, iphi, itheta]] += slttmid; 
+                let array_idx = [ipix0, iphi, itheta];
+                lttint[array_idx] += slttmid;
                 if *isfd64 {
-                    ltfd64[[ipix0, iphi, itheta]] += slt;
+                    ltfd64[array_idx] += slt;
                 } else {
-                    ltfd08[[ipix0, iphi, itheta]] += slt;
-                    lttint8[[ipix0, iphi, itheta]] += slttmid;
+                    ltfd08[array_idx] += slt;
+                    lttint8[array_idx] += slttmid;
                 }
             }
+            // assert!(false);
 
             if *gstop >= sstop {
                 isc+=1;

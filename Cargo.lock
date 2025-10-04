@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "dpltcubers"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cdshealpix",
  "chrono",
@@ -272,9 +272,9 @@ checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
 name = "hifitime"
-version = "4.2.0"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bcc71d459e299e045d3328cc4be250c80f2cf87a73c309d562e8afc52c88a23"
+checksum = "8ca4780c17998a6d7089dac984f76aa860324dbf7451f11cf915d7f199846bec"
 dependencies = [
  "js-sys",
  "lexical-core",
