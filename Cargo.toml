@@ -1,6 +1,6 @@
 [package]
 name = "dpltcubers"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -16,6 +16,5 @@ itertools = "0.14.0"
 indicatif = "0.18.0"
 
 [profile.release]
-lto = true
 codegen-units = 1
 panic = "abort"

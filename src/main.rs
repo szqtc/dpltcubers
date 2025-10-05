@@ -172,7 +172,6 @@ fn get_time_str() -> String {
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-
 fn ltcube_worker(
     ltfd08: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
     ltfd64: &mut ArrayBase<ViewRepr<&mut f64>, Dim<[usize; 3]>>,
@@ -189,7 +188,14 @@ fn ltcube_worker(
     let nphif64: f64 = nphi as f64;
 
     let inv_1_minus_ctheta_min = 1.0 / (1.0 - CTHETA_MIN);
-    let nphi_over_2pi = nphif64/consts::PI/2.;
+    // let nphi_over_2pi = nphif64/consts::PI/2.;
+
+    let mut cosphi_lut: Vec<f64> = (0..=nphi/2).map(|v| ((v as f64)/nphif64*2.*consts::PI).cos()).collect();
+    let (iphi_left, iphi_right) = ((nphi+1)/2, nphi/2);
+    if cosphi_lut.len()*2 <= nphi+1 {
+        cosphi_lut.push(-1.);
+    }
+    cosphi_lut.reverse(); // sort the array
 
     let coszmax = (zmax*D2R).cos();
     let coszmin = (zmin*D2R).cos();
@@ -274,20 +280,14 @@ fn ltcube_worker(
 
                 // constrain the zenith angle
                 let cos_skphi_minus_razth = cosskphi*cosrazth + sinskphi*sinrazth;
-                let mut cossepzth = costhzth*costh + sinthzth*sinth*cos_skphi_minus_razth;
-                if cossepzth > 1. {
-                    cossepzth = 1.;
-                }
+                let cossepzth = (costhzth*costh + sinthzth*sinth*cos_skphi_minus_razth).min(1.);
                 if cossepzth<coszmax || cossepzth>coszmin {
                     continue;
                 }
 
                 // calc the inclination angle
                 let cos_skphi_minus_raz = cosskphi*cosraz + sinskphi*sinraz;
-                let mut cossepz = -(costhz*costh + sinthz*sinth*cos_skphi_minus_raz);
-                if cossepz>1. {
-                    cossepz = 1.; // deal with overflow
-                }
+                let cossepz = (-(costhz*costh + sinthz*sinth*cos_skphi_minus_raz)).min(1.);
                 if cossepz<=CTHETA_MIN { // too large inclination angle
                     continue;
                 }
@@ -302,6 +302,7 @@ fn ltcube_worker(
 
                 // calc index of phi bins
                 let iphi: usize;
+                // let iphi2: usize;
                 if nphi>1 && cossepz<1. {
                     let sinsepz = (1.-cossepz*cossepz).sqrt();
                     let cos_skphi_minus_rax = cosskphi*cosrax + sinskphi*sinrax;
@@ -309,17 +310,26 @@ fn ltcube_worker(
                     let cosphi = cossepx/sinsepz;
 
                     if cosphi<=-1. {
-                        iphi = (nphif64/2.) as usize;
+                        iphi = nphi/2;
                     } else if cosphi >= 1. {
                         iphi = 0;
                     } else {
-                        let phi = cosphi.acos();
-                        let cos_skphi_minus_ray = cosskphi*cosray + sinskphi*sinray;
+                        let iphiraw = bisect::bisect_left(&cosphi_lut, &cosphi); // not at boundary
+
+                        // let phi = cosphi.acos(); // may further improve by 25% if replaced with look up table
+                        let cos_skphi_minus_ray = (cosskphi*cosray + sinskphi*sinray).min(1.).max(-1.);
                         if costhy*costh+sinthy*sinth*cos_skphi_minus_ray <= 0. {
-                            iphi = (phi*nphi_over_2pi) as usize;
+                            // 0 -- 180 deg
+                            // iphi2 = (phi*nphi_over_2pi) as usize;
+                            iphi = iphi_left-iphiraw;
                         } else {
-                            iphi = (nphif64 - phi*nphi_over_2pi) as usize;
+                            // 180 -- 360 deg
+                            // iphi2 = (nphif64 - phi*nphi_over_2pi) as usize;
+                            iphi = iphi_right+iphiraw-1;
                         }
+                        // if iphi!=iphi2 {
+                        //     println!("iphi={}, iphi2={}", iphi, iphi2);
+                        // }
                     }
                 } else {
                     iphi = 0;
@@ -357,13 +367,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
 {
     // echo the input params
     let ncpus = num_cpus::get();
-    let nthr = if nthreads > ncpus {
-        ncpus
-    } else if nthreads < 1 {
-        1
-    } else {
-        nthreads
-    };
+    let nthr = nthreads.max(1).min(ncpus);
     println!("[{}] scfile={} evfile={} outfile={} lincth={} order={} thetabins={} phibins={} zmin={} zmax={} nthreads={}",
             get_time_str(), scfile, evfile, outfile, lincth, order, nthetabins, nphibins, zmin, zmax, nthr);
     assert!(nthetabins>=1 && nphibins>=1);
@@ -443,7 +447,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
         let mut lttint8p= lttint8iter.next().unwrap();
 
         let pb = ProgressBar::new((idxhi-idxlo+1).try_into().unwrap());
-        pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:50}  {percent:>3}%  ETA={eta}").unwrap());
+        pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:50}  {percent:>3}%  ETA: {eta}").unwrap());
 
         lttot = ltcube_worker(&mut ltfd08p, &mut ltfd64p,
             &mut lttintp, &mut lttint8p,
