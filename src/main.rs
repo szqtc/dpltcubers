@@ -417,15 +417,12 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     println!("[{}] calculating ltcube ...", get_time_str());
     let stopwatch = std::time::Instant::now();
 
-    let mut idxlo = bisect::bisect_right(&scobj.tstart, &gtimin)-1;
-    let mut idxhi = bisect::bisect_left(&scobj.tstart, &gtimax)+1;
-    idxlo = std::cmp::max(idxlo, 0);
-    idxhi = std::cmp::min(idxhi, nsc-1);
+    let idxlo = (bisect::bisect_right(&scobj.tstart, &gtimin)-1).max(0);
+    let idxhi = (bisect::bisect_left(&scobj.tstart, &gtimax)+1).min(nsc-1);
     assert!(idxlo<=idxhi);
 
-    let comp_f = |a:&f64, b:&f64| {a.partial_cmp(b).unwrap()};
-    let tmin = std::cmp::max_by(gtimin, scobj.tstart[idxlo], comp_f);
-    let tmax = std::cmp::min_by(gtimax, scobj.tstop[idxhi], comp_f);
+    let tmin = scobj.tstart[idxlo].max(gtimin);
+    let tmax = scobj.tstop[idxhi].min(gtimax);
     // debug
     //println!("idxlo={}, idxhi={}", idxlo, idxhi);
     //println!("gtitmin={}, gtitmax={}", gtimin, gtimax);
