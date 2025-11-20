@@ -3,6 +3,10 @@ name = "dpltcubers"
 version = "0.2.1"
 edition = "2021"
 
+[lib]
+name = "dpltcubers"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 getopts = "0.2.23"
 whoami = "1.6.0"
@@ -18,3 +22,7 @@ indicatif = "0.18.0"
 [profile.release]
 codegen-units = 1
 panic = "abort"
+
+[[bin]]
+name = "dpltcubers"
+path = "src/main.rs"
