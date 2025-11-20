@@ -3,10 +3,6 @@ name = "dpltcubers"
 version = "0.2.1"
 edition = "2021"
 
-[lib]
-name = "dpltcubers"
-crate-type = ["cdylib", "rlib"]
-
 [dependencies]
 getopts = "0.2.23"
 whoami = "1.6.0"
