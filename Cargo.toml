@@ -1,13 +1,13 @@
 [package]
 name = "dpltcubers"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 [dependencies]
 getopts = "0.2.23"
 whoami = "1.6.0"
 chrono = "0.4.41"
-hifitime = "4.2.1"
+hifitime = "4.2.3"
 ndarray = "0.16.1"
 fitsio = "=0.21.5"
 cdshealpix = "0.7.3"
