@@ -39,15 +39,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
-name = "autotools"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aef8da1805e028a172334c3b680f93e71126f2327622faef2ec3d893c0a4ad77"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "backtrace"
 version = "0.3.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,11 +169,12 @@ dependencies = [
 
 [[package]]
 name = "dpltcubers"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "cdshealpix",
  "chrono",
  "fitsio",
+ "fitsio-sys",
  "getopts",
  "hifitime",
  "indicatif",
@@ -215,9 +207,9 @@ dependencies = [
 
 [[package]]
 name = "fitsio"
-version = "0.21.5"
+version = "0.21.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cdb3dff2b25ec4e296f3289f7242054e174921ddffdf4772ee715d0c668c629"
+checksum = "6a37418b8a2e67655b4717287f3c170945ca5f453355a02274250b69400148f4"
 dependencies = [
  "fitsio-sys",
  "libc",
@@ -225,11 +217,10 @@ dependencies = [
 
 [[package]]
 name = "fitsio-sys"
-version = "0.5.2"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8acda860fa6ae349507516e4827941fbcb8be0d875e9e5a7aa01e348771410e1"
+checksum = "14929d0b6fa44a87b374a138ea2256c02c1b5beae1dbc98f62a3e132f862fed1"
 dependencies = [
- "autotools",
  "pkg-config",
 ]
 
@@ -272,9 +263,9 @@ checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
 name = "hifitime"
-version = "4.2.3"
+version = "4.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae664976c51b75b30deb25aa778bff665169ca129104fb5f427e7154fc611ad5"
+checksum = "fd986e90b53308b583668349332fcb508cdecb183d18e0170abe3c01e6aeeb60"
 dependencies = [
  "js-sys",
  "lexical-core",
