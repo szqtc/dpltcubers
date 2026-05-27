@@ -364,6 +364,7 @@ pub fn ltcube_main(scfile: &str, evfile: &str, outfile: &str,
     order: u32, nthetabins: usize, nphibins: usize, zmin: f64, zmax: f64, nthreads: usize, lincth: bool)
     -> Result<(), Box<dyn std::error::Error>>
 {
+    println!("[{}] ==== {} ver. {} ====", get_time_str(), env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     // echo the input params
     let ncpus = num_cpus::get();
     let nthr = nthreads.max(1).min(ncpus);

@@ -1,17 +1,17 @@
 [package]
 name = "dpltcubers"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 
 [dependencies]
 getopts = "0.2.23"
 whoami = "1.6.0"
-chrono = "0.4.41"
-hifitime = "4.2.4"
+chrono = "0.4.44"
+hifitime = "4.3.0"
 ndarray = "0.16.1"
-fitsio = "0.21.9"
-fitsio-sys = "0.5.7"
-cdshealpix = "0.7.3"
+fitsio = {version = "0.21.9", features = ["fitsio-src"]}
+fitsio-sys = {version = "0.5.7", features = ["fitsio-src"]}
+cdshealpix = "0.9.1"
 num_cpus = "1.17.0"
 itertools = "0.14.0"
 indicatif = "0.18.0"
