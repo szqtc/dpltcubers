@@ -1,2 +1,2 @@
-/target
-/testfiles/output_*
+target
+tests/testfiles/output_*
