@@ -1,13 +1,13 @@
 [package]
 name = "dpltcubers"
-version = "0.2.4"
-edition = "2021"
+version = "0.2.5"
+edition = "2024"
 
 [dependencies]
 getopts = "0.2.23"
 whoami = "1.6.0"
 chrono = "0.4.44"
-hifitime = "4.3.0"
+hifitime = "4.3.2"
 ndarray = "0.16.1"
 fitsio = {version = "0.21.9", features = ["fitsio-src"]}
 fitsio-sys = {version = "0.5.7", features = ["fitsio-src"]}
