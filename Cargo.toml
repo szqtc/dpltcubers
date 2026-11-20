@@ -1,10 +1,20 @@
 [package]
 name = "dpltcubers"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 
+[features]
+default = ["cli"]
+# Build the command-line program `target/release/dpltcubers`.
+# Both targets live in the same lib, so cli implies python: otherwise a plain
+# `cargo build --release` would overwrite the importable .so without the module.
+cli = ["dep:getopts", "python"]
+# Build the PyO3 module `target/release/libdpltcubers.so` (importable as
+# `libdpltcubers`); one shared library, no wrapper files.
+python = ["dep:pyo3"]
+
 [dependencies]
-getopts = "0.2.23"
+getopts = { version = "0.2.23", optional = true }
 whoami = "1.6.0"
 chrono = "0.4.44"
 hifitime = "4.3.2"
@@ -15,16 +25,18 @@ cdshealpix = "0.9.1"
 num_cpus = "1.17.0"
 itertools = "0.14.0"
 indicatif = "0.18.0"
+pyo3 = { version = "0.30.1", features = ["extension-module"], optional = true }
 
 [profile.release]
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 
 [[bin]]
 name = "dpltcubers"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [lib]
 name = "dpltcubers"
 path = "src/lib.rs"
-crate-type = ["rlib"]
+crate-type = ["rlib", "cdylib"]

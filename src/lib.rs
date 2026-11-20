@@ -10,6 +10,8 @@ use fitsio::tables::{ColumnDescription, ColumnDataType};
 use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
 
 pub mod bisect;
+#[cfg(feature = "python")]
+mod python;
 
 pub const R2D: f64 = 180./consts::PI;
 pub const D2R: f64 = consts::PI/180.;
